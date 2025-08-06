@@ -1,0 +1,10 @@
+reviews:
+  auto_review:
+    enabled: true
+    default_branch_behavior: normal
+    base_branches:
+      - dev
+    review_prompt: |
+      In addition to standard code review, check for consistency in:
+      - File naming consistency
+      - Error handling consistency
