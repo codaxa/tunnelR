@@ -1,0 +1,1 @@
+gpg --yes --batch --output .env --passphrase $PASSPHRASE --decrypt .env.gpg
