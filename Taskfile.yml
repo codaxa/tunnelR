@@ -1,0 +1,203 @@
+version: "3"
+
+dotenv: ['.env']
+
+tasks:
+  gorm-schema:
+    desc: "Generate GORM schema for Atlas"
+    cmds:
+      - go run atlas-gorm.go
+
+  temp-db-cleanup:
+    desc: "Clean up temporary database"
+    env:
+      PGPASSWORD: "{{.DB_PASSWORD}}"
+    cmds:
+      - |
+        psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d postgres -c "DROP DATABASE IF EXISTS \"${DB_NAME}_temp\";"
+
+  migrate-clean:
+    desc: "Clean migration directory"
+    cmds:
+      - rm -rf migrations
+      - mkdir -p migrations
+
+  migrate-init:
+    desc: "Initialize migration files"
+    cmds:
+      - task: gorm-schema
+      - |
+        atlas migrate diff initial_schema --env development 
+
+  migrate-hash:
+    desc: "Re-hash migration files"
+    cmds:
+      - atlas migrate hash --env development
+
+  migrate-up:
+    desc: "Apply migrations to development DB"
+    cmds:
+      - atlas migrate apply --env development
+
+  migrate-down:
+    desc: "Rollback last migration"
+    cmds:
+      - atlas migrate rollback --env development
+
+  migrate-status:
+    desc: "Check migration status"
+    cmds:
+      - atlas migrate status --env development
+
+  migrate-new:
+    desc: "Generate migration from GORM models"
+    cmds:
+      - task: gorm-schema
+      - atlas migrate diff add_changes --env development 
+
+  setup:
+    desc: "Setup development environment"
+    cmds:
+      - task: deps
+      - task: db-create
+      - task: migrate-init
+      - task: migrate-up
+
+  setup-fresh:
+    desc: "Fresh setup with clean database"
+    cmds:
+      - task: deps
+      - task: db-drop
+      - task: temp-db-cleanup
+      - task: db-create
+      - task: migrate-clean
+      - task: migrate-init
+      - task: migrate-new
+      - task: migrate-up
+
+  db-create:
+    desc: "Create database"
+    env:
+      PGPASSWORD: "{{.DB_PASSWORD}}"
+    cmds:
+      - |
+        if ! psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d postgres -lqt | cut -d \| -f 1 | grep -qw "${DB_NAME}"; then
+          psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d postgres -c "CREATE DATABASE \"${DB_NAME}\";"
+          echo "Database '${DB_NAME}' created successfully"
+        else
+          echo "Database '${DB_NAME}' already exists"
+        fi
+
+  db-drop:
+    desc: "Drop database with connection check"
+    env:
+      PGPASSWORD: "{{.DB_PASSWORD}}"
+    cmds:
+      - |
+        echo "Checking for active connections..."
+        CONNECTIONS=$(psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d postgres -t -c "SELECT count(*) FROM pg_stat_activity WHERE datname = '${DB_NAME}' AND pid <> pg_backend_pid();")
+        if [ "$CONNECTIONS" -gt 0 ]; then
+          echo "Found $CONNECTIONS active connections. Terminating them..."
+          psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${DB_NAME}' AND pid <> pg_backend_pid();"
+          sleep 2
+        fi
+        psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d postgres -c "DROP DATABASE IF EXISTS \"${DB_NAME}\";"
+    prompt: "Are you sure you want to drop the database?"
+
+  db-exists:
+    desc: "Check if database exists"
+    env:
+      PGPASSWORD: "{{.DB_PASSWORD}}"
+    cmds:
+      - |
+        if psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d postgres -lqt | cut -d \| -f 1 | grep -qw "${DB_NAME}"; then
+          echo "Database '${DB_NAME}' exists"
+        else
+          echo "Database '${DB_NAME}' does not exist"
+        fi
+
+  test:
+    desc: "Run all tests"
+    cmds:
+      - go test ./...
+
+  test-verbose:
+    desc: "Run tests with verbose output"
+    cmds:
+      - go test -v ./...
+
+  test-coverage:
+    desc: "Run tests with coverage"
+    cmds:
+      - go test -cover ./...
+
+  build:
+    desc: "Build the application"
+    cmds:
+      - go build -o bin/z-chat ./cmd/chatserver
+
+  run:
+    desc: "Run the application"
+    cmds:
+      - go run ./cmd/chatserver
+
+  clean:
+    desc: "Clean build artifacts"
+    cmds:
+      - rm -rf bin/
+
+  deps:
+    desc: "Download dependencies"
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  lint:
+    desc: "Run linter"
+    cmds:
+      - golangci-lint run
+
+  format:
+    desc: "Format code"
+    cmds:
+      - go fmt ./...
+
+  dev:
+    desc: "Run in development mode with auto-reload"
+    deps: [build]
+    cmds:
+      - ./bin/z-chat
+
+  dev-reset:
+    desc: "Reset development database"
+    cmds:
+      - task: db-drop
+      - task: db-create
+      - task: migrate-up
+
+  check:
+    desc: "Run all checks (lint, test, format)"
+    cmds:
+      - task: format
+      - task: lint
+      - task: test
+
+  encrypt:
+    desc: "Encrypt .env files"
+    cmds:
+      - bash ./scripts/encrypt.sh
+
+  decrypt:
+    desc: "Decrypt .env files"
+    cmds:
+      - bash ./scripts/decrypt.sh
+  
+  default:
+    desc: "Show available tasks"
+    cmds:
+      - task --list
+  
+  dev-air:
+    desc: "Start development server with file watching"
+    cmds:
+      - air

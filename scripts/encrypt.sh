@@ -1,0 +1,1 @@
+gpg --yes --batch --output .env.gpg --passphrase $PASSPHRASE --symmetric .env
