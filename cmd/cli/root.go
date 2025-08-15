@@ -6,8 +6,12 @@ Copyright © 2025 CODAXA
 package cli
 
 import (
-	"github.com/spf13/cobra"
+	"fmt"
 	"os"
+	"strings"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // RootCmd represents the base command when called without any subcommands
@@ -39,36 +43,44 @@ func Execute() {
 	}
 }
 
+func trimFlagTypes(flags *pflag.FlagSet) string {
+	var sb strings.Builder
+	flags.VisitAll(func(f *pflag.Flag) {
+		sb.WriteString(fmt.Sprintf("  -%s, --%s\t%s\n", f.Shorthand, f.Name, f.Usage))
+	})
+	// Remove the trailing newline to prevent extra space
+	result := sb.String()
+	if len(result) > 0 && result[len(result)-1] == '\n' {
+		result = result[:len(result)-1]
+	}
+	return result
+}
+
 func init() {
 	RootCmd.CompletionOptions.DisableDefaultCmd = true
-	var customUsageTemplate = `Usage:
+
+	usageTemplate := `Usage:
   {{.UseLine}}{{if .HasAvailableSubCommands}}
 
-Available Commands:
-{{range .Commands}}{{if (or .IsAvailableCommand (eq .Name "help"))}}  {{rpad .Name .NamePadding }} {{.Short}}
-{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+Available Commands:{{range .Commands}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
 
 Flags:
-{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+{{ trimFlagTypes .LocalFlags }}{{end}}{{if .HasAvailableInheritedFlags}}
 
 Global Flags:
-{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
+{{ trimFlagTypes .InheritedFlags }}{{end}}{{if .HasHelpSubCommands}}
 
-Additional help topics:
-{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}
-{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
+Additional help topics:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
+  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
 
 Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
 `
 
-	RootCmd.SetUsageTemplate(customUsageTemplate)
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.tunnelR.git.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	// RootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// Register the template function and set the template
+	funcMap := map[string]interface{}{
+		"trimFlagTypes": trimFlagTypes,
+	}
+	cobra.AddTemplateFuncs(funcMap)
+	RootCmd.SetUsageTemplate(usageTemplate)
 }
