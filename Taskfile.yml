@@ -9,7 +9,9 @@ tasks:
 
   build:
     desc: "Build the tunnelR CLI application"
+    deps: [deps]
     cmds:
+      - mkdir -p bin
       - go build -o bin/tunnelr ./cmd/main.go
 
   run:
