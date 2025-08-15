@@ -80,7 +80,12 @@ func checkServerHealth(server string) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			fmt.Printf("Error closing response body: %v\n", err)
+		}
+	}()
 
 	return resp.StatusCode == http.StatusOK
 }

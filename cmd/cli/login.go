@@ -74,7 +74,11 @@ The login command requires:
 			fmt.Println("Error sending request:", err)
 			os.Exit(1)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				fmt.Println("Error closing response body:", err)
+			}
+		}()
 
 		switch resp.StatusCode {
 		case http.StatusOK:
