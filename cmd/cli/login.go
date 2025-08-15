@@ -87,7 +87,7 @@ The login command requires:
 
 			// Create config directory
 			homeDir, _ := os.UserHomeDir()
-			configDir := filepath.Join(homeDir, ".tempssh")
+			configDir := filepath.Join(homeDir, ".tunnelr")
 			if err := os.MkdirAll(configDir, 0700); err != nil {
 				fmt.Println("Error creating config directory:", err)
 				os.Exit(1)

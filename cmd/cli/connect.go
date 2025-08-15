@@ -85,7 +85,7 @@ func checkServerHealth(server string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// saveServerConfig saves the server address to ~/.tempssh/config.json
+// saveServerConfig saves the server address to ~/.tunnelr/config.json
 func saveServerConfig(server string) error {
 	// Load existing config first to preserve other fields like token
 	config, err := loadConfig()
@@ -96,7 +96,7 @@ func saveServerConfig(server string) error {
 	// Update the server field
 	config.Server = server
 
-	configDir := filepath.Join(os.Getenv("HOME"), ".tempssh")
+	configDir := filepath.Join(os.Getenv("HOME"), ".tunnelr")
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
@@ -115,14 +115,14 @@ func saveServerConfig(server string) error {
 	return nil
 }
 
-// loadConfig loads the configuration from ~/.tempssh/config.json
+// loadConfig loads the configuration from ~/.tunnelr/config.json
 func loadConfig() (*Config, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user home directory: %w", err)
 	}
 
-	configPath := filepath.Join(homeDir, ".tempssh", "config.json")
+	configPath := filepath.Join(homeDir, ".tunnelr", "config.json")
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
