@@ -1,4 +1,4 @@
-// It implements the main entry point for the backend server application.
+// Package main implements the main entry point for the backend server application.
 package main
 
 import (
