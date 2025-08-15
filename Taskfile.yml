@@ -7,28 +7,38 @@ tasks:
       - go mod download
       - go mod tidy
 
-  build:
+  build-cli:
     desc: "Build the tunnelR CLI application"
     deps: [deps]
     cmds:
       - mkdir -p bin
-      - go build -o bin/tunnelr ./cmd/main.go
+      - go build -o bin/tunnelr-cli ./cmd/cli/main.go
+
+  build-api:
+    desc: "Build the tunnelR API server"
+    deps: [deps]
+    cmds:
+      - mkdir -p bin
+      - go build -o bin/tunnelr-api ./cmd/api/main.go
+
+  build:
+    desc: "Build both CLI and API applications"
+    deps: [build-cli, build-api]
 
   run-cli:
     desc: "Run the tunnelR CLI application"
     cmds:
-      - go run ./cmd/main.go --help
-  
+      - go run ./cmd/cli/main.go
+
   run-api:
-    desc: "Run the tunnelR CLI application"
+    desc: "Run the tunnelR API server"
     cmds:
-      - go run ./api/main.go
+      - go run ./cmd/api/main.go
 
   test:
     desc: "Run all tests"
     cmds:
       - go test ./...
-
 
   lint:
     desc: "Run linter"

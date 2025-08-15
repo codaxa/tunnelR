@@ -1,4 +1,4 @@
-package cli
+package commands
 
 import (
 	"bytes"
@@ -68,7 +68,7 @@ The login command requires:
 		}
 
 		// Make POST request
-		url := fmt.Sprintf("https://%s/api/login", server)
+		url := fmt.Sprintf("http://%s/api/login", server)
 		resp, err := http.Post(url, "application/json", bytes.NewBuffer(bodyBytes))
 		if err != nil {
 			fmt.Println("Error sending request:", err)
@@ -155,5 +155,4 @@ func init() {
 	if err := loginCmd.MarkFlagRequired("password"); err != nil {
 		fmt.Println(err)
 	}
-	// Server is not required since it can be loaded from config
 }

@@ -1,4 +1,4 @@
-package cli
+package commands
 
 import (
 	"encoding/json"
@@ -152,8 +152,4 @@ func init() {
 	if err := connectCmd.MarkFlagRequired("user"); err != nil {
 		fmt.Println(err)
 	}
-	// Remove the required flag for server since we can load it from config
-	// if err := connectCmd.MarkFlagRequired("server"); err != nil {
-	//     fmt.Println(err)
-	// }
 }

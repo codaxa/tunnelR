@@ -1,9 +1,5 @@
-/*
-Copyright © 2025 CODAXA
-*/
-
-// Package cli to handle command line instructions
-package cli
+// Package commands to handle command line instructions
+package commands
 
 import (
 	"fmt"
