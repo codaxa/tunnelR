@@ -14,10 +14,15 @@ tasks:
       - mkdir -p bin
       - go build -o bin/tunnelr ./cmd/main.go
 
-  run:
+  run-cli:
     desc: "Run the tunnelR CLI application"
     cmds:
       - go run ./cmd/main.go --help
+  
+  run-api:
+    desc: "Run the tunnelR CLI application"
+    cmds:
+      - go run ./api/main.go
 
   test:
     desc: "Run all tests"
@@ -52,6 +57,16 @@ tasks:
     desc: "Clean build artifacts"
     cmds:
       - rm -rf bin/
+
+  encrypt:
+    desc: "Encrypt .env files"
+    cmds:
+      - bash ./scripts/encrypt.sh
+
+  decrypt:
+    desc: "Decrypt .env files"
+    cmds:
+      - bash ./scripts/decrypt.sh
 
   default:
     desc: "Show available tasks"
