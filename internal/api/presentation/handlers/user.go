@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"strings"
 
+	appctx "github.com/codaxa/tunnelR.git/internal/api/app/context"
 	"github.com/codaxa/tunnelR.git/internal/api/app/service"
 	"github.com/codaxa/tunnelR.git/internal/api/core/model"
+	"github.com/golang-jwt/jwt"
 )
 
 // AuthServicer defines the authentication service interface
@@ -112,6 +114,42 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 	resp := tokenResponse{Token: token}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.Printf("ERROR encoding response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// GetUserInfo retrieves the current user's information from the JWT token
+func (h *UserHandler) GetUserInfo(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(appctx.UserClaimsKey).(*jwt.MapClaims)
+	if !ok || claims == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	username, ok := (*claims)["username"].(string)
+	if !ok {
+		http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+		return
+	}
+
+	role, ok := (*claims)["role"].(string)
+	if !ok {
+		http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+		return
+	}
+
+	response := struct {
+		Username string `json:"username"`
+		Role     string `json:"role"`
+	}{
+		Username: username,
+		Role:     role,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("ERROR encoding response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
