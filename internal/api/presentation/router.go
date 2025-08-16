@@ -9,10 +9,11 @@ import (
 )
 
 // NewRouter creates a new HTTP router with the necessary routes and middleware.
-func NewRouter(authService *service.AuthService) *chi.Mux {
+func NewRouter(authService *service.AuthService, teamService *service.TeamService) *chi.Mux {
 	router := chi.NewRouter()
 
 	userHandler := handlers.NewUserHandler(authService)
+	teamHandler := handlers.NewTeamHandler(teamService)
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
 	// Public routes
@@ -28,6 +29,13 @@ func NewRouter(authService *service.AuthService) *chi.Mux {
 		r.Group(func(r chi.Router) {
 			r.Use(authMiddleware.Authenticate)
 			r.Get("/whoami", userHandler.GetUserInfo)
+
+			// Team routes
+			r.Route("/v1/teams", func(r chi.Router) {
+				r.Post("/", teamHandler.CreateTeam)
+				r.Get("/", teamHandler.GetTeams)
+				r.Get("/{id}", teamHandler.GetTeam)
+			})
 		})
 
 		// Admin-only routes

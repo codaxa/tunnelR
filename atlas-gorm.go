@@ -78,6 +78,8 @@ func main() {
 
 	if err := db.AutoMigrate(
 		&model.User{},
+		&model.Team{},
+		&model.UserTeam{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
