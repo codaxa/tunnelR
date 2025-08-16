@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"strings"
 
+	appctx "github.com/codaxa/tunnelR.git/internal/api/app/context"
 	"github.com/codaxa/tunnelR.git/internal/api/app/service"
 	"github.com/codaxa/tunnelR.git/internal/api/core/model"
+	"github.com/golang-jwt/jwt"
 )
 
 // AuthServicer defines the authentication service interface
@@ -112,6 +114,56 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 	resp := tokenResponse{Token: token}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.Printf("ERROR encoding response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// GetUserInfo retrieves the current user's information from the JWT token
+func (h *UserHandler) GetUserInfo(w http.ResponseWriter, r *http.Request) {
+	// Get claims from context and handle both pointer and value types
+	var normalizedClaims map[string]interface{}
+	ctxValue := r.Context().Value(appctx.UserClaimsKey)
+
+	switch v := ctxValue.(type) {
+	case *jwt.MapClaims:
+		if v == nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		normalizedClaims = *v
+	case jwt.MapClaims:
+		normalizedClaims = v
+	default:
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Extract username
+	username, ok := normalizedClaims["username"].(string)
+	if !ok {
+		http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+		return
+	}
+
+	// Extract role
+	role, ok := normalizedClaims["role"].(string)
+	if !ok {
+		http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+		return
+	}
+
+	response := struct {
+		Username string `json:"username"`
+		Role     string `json:"role"`
+	}{
+		Username: username,
+		Role:     role,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("ERROR encoding response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return

@@ -19,17 +19,22 @@ func NewRouter(authService *service.AuthService) *chi.Mux {
 	router.Get("/healthz", handlers.HealthHandler)
 	router.Get("/version", handlers.VersionHandler)
 
-	router.Post("/api/login", userHandler.Login)
-
-	// API authenticated routes
-	// router.Route("/api", func(r chi.Router) {
-	// 	r.Use(authMiddleware.Authenticate)
-	// })
-
-	// API admin authenticated routes
+	// API routes
 	router.Route("/api", func(r chi.Router) {
-		r.Use(authMiddleware.AdminAuthenticate)
-		r.Post("/register", userHandler.Register)
+		// Public API endpoints
+		r.Post("/login", userHandler.Login)
+
+		// Authenticated user routes
+		r.Group(func(r chi.Router) {
+			r.Use(authMiddleware.Authenticate)
+			r.Get("/whoami", userHandler.GetUserInfo)
+		})
+
+		// Admin-only routes
+		r.Group(func(r chi.Router) {
+			r.Use(authMiddleware.AdminAuthenticate)
+			r.Post("/register", userHandler.Register)
+		})
 	})
 
 	return router
