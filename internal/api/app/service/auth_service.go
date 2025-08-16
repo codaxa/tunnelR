@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,13 @@ import (
 	"github.com/codaxa/tunnelR.git/internal/api/core/repository"
 	"github.com/golang-jwt/jwt"
 	"golang.org/x/crypto/bcrypt"
+)
+
+var (
+	// ErrUsernameExists indicates a duplicate username during registration.
+	ErrUsernameExists = errors.New("username already exists")
+	// ErrInvalidCredentials indicates either an unknown username or wrong password.
+	ErrInvalidCredentials = errors.New("invalid credentials")
 )
 
 // AuthService handles authentication operations.
@@ -36,7 +44,7 @@ func (s *AuthService) Register(ctx context.Context, username, password, role str
 		return fmt.Errorf("failed to check username availability: %w", err)
 	}
 	if existingUser != nil {
-		return fmt.Errorf("username already exists")
+		return ErrUsernameExists
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -61,11 +69,11 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (str
 	}
 
 	if user == nil {
-		return "", fmt.Errorf("invalid username")
+		return "", ErrInvalidCredentials
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		return "", fmt.Errorf("invalid password")
+		return "", ErrInvalidCredentials
 	}
 
 	token, err := s.generateJWT(user)
@@ -95,27 +103,31 @@ func (s *AuthService) generateJWT(user *model.User) (string, error) {
 func (s *AuthService) ValidateToken(tokenString string) (*jwt.MapClaims, error) {
 	tokenString = strings.TrimPrefix(tokenString, "Bearer ")
 
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+	claims := jwt.MapClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		// Enforce HMAC and prefer HS256
+		if m, ok := token.Method.(*jwt.SigningMethodHMAC); !ok || m.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return s.jwtSecret, nil
 	})
 
-	if token == nil {
-		return nil, err
+	if err != nil || token == nil {
+		return nil, fmt.Errorf("invalid token: %w", err)
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
+	if !token.Valid {
+		return nil, fmt.Errorf("invalid token")
+	}
 
+	parsedClaims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		return nil, fmt.Errorf("failed to parse token claims")
 	}
 
-	err = claims.Valid()
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse token claims: %w", err)
+	if err := parsedClaims.Valid(); err != nil {
+		return nil, fmt.Errorf("failed to validate token claims: %w", err)
 	}
 
-	return &claims, nil
+	return &parsedClaims, nil
 }

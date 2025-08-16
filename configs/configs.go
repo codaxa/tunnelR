@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -65,8 +66,16 @@ func New() *Config {
 		log.Println("Warning: Using default database name. Set DB_NAME environment variable in production.")
 	}
 
-	dbURL := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		dbHost, dbPort, dbUser, dbPassword, dbName)
+	u := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(dbUser, dbPassword),
+		Host:   fmt.Sprintf("%s:%d", dbHost, dbPort),
+		Path:   dbName,
+	}
+	q := u.Query()
+	q.Set("sslmode", "disable")
+	u.RawQuery = q.Encode()
+	dbURL := u.String()
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {

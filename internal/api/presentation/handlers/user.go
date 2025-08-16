@@ -3,10 +3,12 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
 
+	"github.com/codaxa/tunnelR.git/internal/api/app/service"
 	"github.com/codaxa/tunnelR.git/internal/api/core/model"
 )
 
@@ -98,7 +100,12 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	token, err := h.authService.Login(r.Context(), req.Username, req.Password)
 	if err != nil {
-		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+			return
+		}
+		log.Printf("ERROR during login: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 

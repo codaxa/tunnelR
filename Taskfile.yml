@@ -119,6 +119,7 @@ tasks:
           echo "Database '${DB_NAME}' exists"
         else
           echo "Database '${DB_NAME}' does not exist"
+        fi
 
   temp-db-cleanup:
     desc: "Clean up temporary database"

@@ -35,6 +35,9 @@ func run() error {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer dbConn.Close()
+	if err := dbConn.Ping(context.Background()); err != nil {
+		log.Fatalf("Failed to ping database: %v", err)
+	}
 
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(dbConn)

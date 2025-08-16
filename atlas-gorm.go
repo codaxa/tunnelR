@@ -40,10 +40,14 @@ func main() {
 	}
 
 	// Create temporary database with proper quoting
-	sqlDB, _ := adminDB.DB()
+	sqlDB, err := adminDB.DB()
+	if err != nil {
+		log.Fatalf("failed to get admin DB handle: %v", err)
+	}
+	defer sqlDB.Close()
 
-	// Quote the database name to handle hyphens
-	quotedTempDB := fmt.Sprintf(`"%s"`, tempDB)
+	// Quote the database name to handle hyphens and escape quotes
+	quotedTempDB := `"` + strings.ReplaceAll(tempDB, `"`, `""`) + `"`
 
 	_, err = sqlDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", quotedTempDB))
 	if err != nil {
@@ -59,7 +63,7 @@ func main() {
 	tempDSN := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable",
 		cfg.DBHost, cfg.DBUser, cfg.DBPassword, tempDB, cfg.DBPort)
 
-	log.Printf("Connecting to temporary database: %s", tempDSN)
+	log.Printf("Connecting to temporary database host=%s dbname=%s", cfg.DBHost, tempDB)
 
 	db, err := gorm.Open(postgres.Open(tempDSN), &gorm.Config{})
 	if err != nil {
@@ -67,6 +71,11 @@ func main() {
 	}
 
 	// Auto-migrate to generate schema in temp database
+	// Ensure pgcrypto is available for gen_random_uuid()
+	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS pgcrypto").Error; err != nil {
+		log.Fatalf("failed to ensure pgcrypto extension: %v", err)
+	}
+
 	if err := db.AutoMigrate(
 		&model.User{},
 	); err != nil {
