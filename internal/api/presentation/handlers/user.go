@@ -122,19 +122,33 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 // GetUserInfo retrieves the current user's information from the JWT token
 func (h *UserHandler) GetUserInfo(w http.ResponseWriter, r *http.Request) {
-	claims, ok := r.Context().Value(appctx.UserClaimsKey).(*jwt.MapClaims)
-	if !ok || claims == nil {
+	// Get claims from context and handle both pointer and value types
+	var normalizedClaims map[string]interface{}
+	ctxValue := r.Context().Value(appctx.UserClaimsKey)
+
+	switch v := ctxValue.(type) {
+	case *jwt.MapClaims:
+		if v == nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		normalizedClaims = *v
+	case jwt.MapClaims:
+		normalizedClaims = v
+	default:
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	username, ok := (*claims)["username"].(string)
+	// Extract username
+	username, ok := normalizedClaims["username"].(string)
 	if !ok {
 		http.Error(w, "Invalid token claims", http.StatusUnauthorized)
 		return
 	}
 
-	role, ok := (*claims)["role"].(string)
+	// Extract role
+	role, ok := normalizedClaims["role"].(string)
 	if !ok {
 		http.Error(w, "Invalid token claims", http.StatusUnauthorized)
 		return
