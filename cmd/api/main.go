@@ -2,12 +2,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/codaxa/tunnelR.git/configs"
-	"github.com/codaxa/tunnelR.git/internal/api"
+	"github.com/codaxa/tunnelR.git/internal/api/app/service"
+	"github.com/codaxa/tunnelR.git/internal/api/infrastructure/repository"
+	apirouter "github.com/codaxa/tunnelR.git/internal/api/presentation"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // main initializes and starts the backend server, setting up HTTP endpoints.
@@ -20,10 +24,27 @@ func main() {
 func run() error {
 	cfg := configs.New()
 
-	router := api.NewRouter()
+	// Initialize database connection
+	connConfig, err := pgxpool.ParseConfig(cfg.DBUrl)
+	if err != nil {
+		log.Fatalf("Failed to parse database configuration: %v", err)
+	}
+
+	dbConn, err := pgxpool.NewWithConfig(context.Background(), connConfig)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer dbConn.Close()
+
+	// Initialize repositories
+	userRepo := repository.NewUserRepository(dbConn)
+
+	// Initialize services
+	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.TokenDuration)
+
+	router := apirouter.NewRouter(authService)
 
 	fmt.Printf("Backend server is running on port %s\n", cfg.Port)
 
 	return http.ListenAndServe(":"+cfg.Port, router)
-
 }
