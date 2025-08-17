@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"time"
 
+	appContext "github.com/codaxa/tunnelR.git/internal/api/app/context"
 	"github.com/codaxa/tunnelR.git/internal/api/core/model"
 	"github.com/codaxa/tunnelR.git/internal/api/core/repository"
+	"github.com/codaxa/tunnelR.git/internal/api/core/utils"
+	"github.com/golang-jwt/jwt"
 )
 
 var (
@@ -34,21 +37,37 @@ func NewTeamService(teamRepo repository.TeamRepository, userRepo repository.User
 	}
 }
 
+// isUserAdmin checks if a user is an admin using JWT claims if available, otherwise falls back to DB lookup
+func (s *TeamService) isUserAdmin(ctx context.Context, userID string) (bool, error) {
+	// First check if we have JWT claims in the context
+	if claims, ok := ctx.Value(appContext.UserClaimsKey).(*jwt.MapClaims); ok && claims != nil {
+		role := utils.ExtractUserRole(claims)
+		return role == model.RoleAdmin, nil
+	}
+
+	// Fallback to database lookup
+	user, err := s.userRepository.GetUserByID(ctx, userID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	if user == nil {
+		return false, fmt.Errorf("user not found")
+	}
+
+	return user.IsAdmin(), nil
+}
+
 // CreateTeam creates a new team and adds the creator as a member
 // Only users with admin role can create teams
 func (s *TeamService) CreateTeam(ctx context.Context, name, userID string) (string, error) {
 	// Check if user has admin role
-	user, err := s.userRepository.GetUserByID(ctx, userID)
+	isAdmin, err := s.isUserAdmin(ctx, userID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get user: %w", err)
+		return "", err
 	}
 
-	if user == nil {
-		return "", fmt.Errorf("user not found")
-	}
-
-	// Check if user is an admin
-	if !user.IsAdmin() {
+	if !isAdmin {
 		return "", ErrUnauthorizedRole
 	}
 
@@ -86,6 +105,16 @@ func (s *TeamService) GetTeamsByUserID(ctx context.Context, userID string) ([]*m
 
 // GetTeamByID retrieves a team by its ID, checking if the user has access
 func (s *TeamService) GetTeamByID(ctx context.Context, teamID, userID string) (*model.Team, error) {
+	// Get team first
+	team, err := s.teamRepository.GetTeamByID(ctx, teamID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get team: %w", err)
+	}
+
+	if team == nil {
+		return nil, ErrTeamNotFound
+	}
+
 	// Check if user is in team
 	inTeam, err := s.teamRepository.IsUserInTeam(ctx, userID, teamID)
 	if err != nil {
@@ -94,16 +123,6 @@ func (s *TeamService) GetTeamByID(ctx context.Context, teamID, userID string) (*
 
 	if !inTeam {
 		return nil, ErrUserNotInTeam
-	}
-
-	// Get team
-	team, err := s.teamRepository.GetTeamByID(ctx, teamID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get team: %w", err)
-	}
-
-	if team == nil {
-		return nil, ErrTeamNotFound
 	}
 
 	return team, nil

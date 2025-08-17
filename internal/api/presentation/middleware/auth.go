@@ -69,8 +69,9 @@ func (am *AuthMiddleware) AdminAuthenticate(next http.Handler) http.Handler {
 	})
 }
 
-// extractUserRole extracts the user role from the JWT claims in the request context.
-func extractUserRole(claims *jwt.MapClaims) (role string) {
+// ExtractUserRole extracts the user role from the JWT claims in the request context.
+// Exported so it can be used by other packages
+func ExtractUserRole(claims *jwt.MapClaims) (role string) {
 	if claims == nil {
 		return ""
 	}
@@ -81,4 +82,9 @@ func extractUserRole(claims *jwt.MapClaims) (role string) {
 		}
 	}
 	return role
+}
+
+// extractUserRole extracts the user role from the JWT claims in the request context.
+func extractUserRole(claims *jwt.MapClaims) (role string) {
+	return ExtractUserRole(claims)
 }
