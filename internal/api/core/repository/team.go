@@ -26,4 +26,10 @@ type TeamRepository interface {
 
 	// IsUserInTeam checks if a user is a member of a team
 	IsUserInTeam(ctx context.Context, userID, teamID string) (bool, error)
+
+	// DeleteTeam deletes a team by its ID
+	DeleteTeam(ctx context.Context, teamID string) error
+
+	// GetTeamByName retrieves a team by its name
+	GetTeamByName(ctx context.Context, name string) (*model.Team, error)
 }

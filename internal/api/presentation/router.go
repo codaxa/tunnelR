@@ -29,19 +29,16 @@ func NewRouter(authService *service.AuthService, teamService *service.TeamServic
 		r.Group(func(r chi.Router) {
 			r.Use(authMiddleware.Authenticate)
 			r.Get("/whoami", userHandler.GetUserInfo)
-
-			// Team routes
-			r.Route("/v1/teams", func(r chi.Router) {
-				r.Post("/", teamHandler.CreateTeam)
-				r.Get("/", teamHandler.GetTeams)
-				r.Get("/{id}", teamHandler.GetTeam)
-			})
+			r.Get("/v1/teams", teamHandler.GetTeams)
+			r.Get("/v1/teams/{id}", teamHandler.GetTeam)
 		})
 
 		// Admin-only routes
 		r.Group(func(r chi.Router) {
 			r.Use(authMiddleware.AdminAuthenticate)
 			r.Post("/register", userHandler.Register)
+			r.Post("/v1/teams", teamHandler.CreateTeam)
+			r.Delete("/v1/teams/{id}", teamHandler.DeleteTeam) // Add the delete endpoint
 		})
 	})
 

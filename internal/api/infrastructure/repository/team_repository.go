@@ -133,3 +133,54 @@ func (r *TeamRepository) IsUserInTeam(ctx context.Context, userID, teamID string
 
 	return exists, nil
 }
+
+// DeleteTeam deletes a team and all associated user_team relationships
+func (r *TeamRepository) DeleteTeam(ctx context.Context, teamID string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+
+	// Ensure transaction is rolled back on error
+	defer func() {
+		if err != nil {
+			if rbErr := tx.Rollback(ctx); rbErr != nil {
+				fmt.Printf("Error rolling back transaction: %v\n", rbErr)
+			}
+		}
+	}()
+
+	// Delete from user_teams first (respecting foreign key constraints)
+	if _, err = tx.Exec(ctx, `DELETE FROM user_teams WHERE team_id = $1`, teamID); err != nil {
+		return fmt.Errorf("failed to delete team memberships: %w", err)
+	}
+
+	// Now delete the team
+	if _, err = tx.Exec(ctx, `DELETE FROM teams WHERE id = $1`, teamID); err != nil {
+		return fmt.Errorf("failed to delete team: %w", err)
+	}
+
+	// Commit transaction
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// GetTeamByName retrieves a team by its name
+func (r *TeamRepository) GetTeamByName(ctx context.Context, name string) (*model.Team, error) {
+	query := `SELECT id, name, created_at, updated_at FROM teams WHERE name = $1`
+	row := r.db.QueryRow(ctx, query, name)
+
+	var team model.Team
+	err := row.Scan(&team.ID, &team.Name, &team.CreatedAt, &team.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to query team by name: %w", err)
+	}
+
+	return &team, nil
+}

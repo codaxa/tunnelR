@@ -81,13 +81,12 @@ func (h *TeamHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	// Create team
 	teamID, err := h.teamService.CreateTeam(r.Context(), req.Name, userID)
 	if err != nil {
-		log.Printf("Error creating team: %v", err)
-
-		if errors.Is(err, service.ErrUnauthorizedRole) {
-			http.Error(w, "Unauthorized: Admin role required to create teams", http.StatusForbidden)
+		if errors.Is(err, service.ErrTeamNameExists) {
+			http.Error(w, "Team with this name already exists", http.StatusConflict)
 			return
 		}
 
+		log.Printf("Error creating team: %v", err)
 		http.Error(w, "Failed to create team", http.StatusInternalServerError)
 		return
 	}
@@ -176,4 +175,28 @@ func (h *TeamHandler) GetTeam(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
+}
+
+// DeleteTeam handles the deletion of a team
+func (h *TeamHandler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	if teamID == "" {
+		http.Error(w, "Team ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Delete the team
+	err := h.teamService.DeleteTeam(r.Context(), teamID)
+	if err != nil {
+		if errors.Is(err, service.ErrTeamNotFound) {
+			http.Error(w, "Team not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("Error deleting team: %v", err)
+		http.Error(w, "Failed to delete team", http.StatusInternalServerError)
+		return
+	}
+
+	// Return success response with no content
+	w.WriteHeader(http.StatusNoContent)
 }

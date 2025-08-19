@@ -5,13 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	appContext "github.com/codaxa/tunnelR.git/internal/api/app/context"
 	"github.com/codaxa/tunnelR.git/internal/api/core/model"
 	"github.com/codaxa/tunnelR.git/internal/api/core/repository"
-	"github.com/codaxa/tunnelR.git/internal/api/core/utils"
-	"github.com/golang-jwt/jwt"
 )
 
 var (
@@ -21,6 +19,8 @@ var (
 	ErrUserNotInTeam = errors.New("user is not a member of this team")
 	// ErrUnauthorizedRole indicates a user doesn't have the required role for an operation
 	ErrUnauthorizedRole = errors.New("user does not have the required role for this operation")
+	// ErrTeamNameExists indicates a team with the same name already exists
+	ErrTeamNameExists = errors.New("a team with this name already exists")
 )
 
 // TeamService handles team-related operations
@@ -37,40 +37,8 @@ func NewTeamService(teamRepo repository.TeamRepository, userRepo repository.User
 	}
 }
 
-// isUserAdmin checks if a user is an admin using JWT claims if available, otherwise falls back to DB lookup
-func (s *TeamService) isUserAdmin(ctx context.Context, userID string) (bool, error) {
-	// First check if we have JWT claims in the context
-	if claims, ok := ctx.Value(appContext.UserClaimsKey).(*jwt.MapClaims); ok && claims != nil {
-		role := utils.ExtractUserRole(claims)
-		return role == model.RoleAdmin, nil
-	}
-
-	// Fallback to database lookup
-	user, err := s.userRepository.GetUserByID(ctx, userID)
-	if err != nil {
-		return false, fmt.Errorf("failed to get user: %w", err)
-	}
-
-	if user == nil {
-		return false, fmt.Errorf("user not found")
-	}
-
-	return user.IsAdmin(), nil
-}
-
 // CreateTeam creates a new team and adds the creator as a member
-// Only users with admin role can create teams
 func (s *TeamService) CreateTeam(ctx context.Context, name, userID string) (string, error) {
-	// Check if user has admin role
-	isAdmin, err := s.isUserAdmin(ctx, userID)
-	if err != nil {
-		return "", err
-	}
-
-	if !isAdmin {
-		return "", ErrUnauthorizedRole
-	}
-
 	// Initialize team with current time for timestamps
 	now := time.Now()
 	team := model.Team{
@@ -87,6 +55,11 @@ func (s *TeamService) CreateTeam(ctx context.Context, name, userID string) (stri
 	// Create team and add user in a single transaction
 	teamID, err := s.teamRepository.CreateTeam(ctx, team, userID)
 	if err != nil {
+		// Check if it's a unique constraint violation
+		if strings.Contains(err.Error(), "unique constraint") ||
+			strings.Contains(err.Error(), "Duplicate entry") {
+			return "", ErrTeamNameExists
+		}
 		return "", fmt.Errorf("failed to create team: %w", err)
 	}
 
@@ -126,4 +99,25 @@ func (s *TeamService) GetTeamByID(ctx context.Context, teamID, userID string) (*
 	}
 
 	return team, nil
+}
+
+// DeleteTeam deletes a team by its ID
+// Only admins should be able to delete teams (enforced by middleware)
+func (s *TeamService) DeleteTeam(ctx context.Context, teamID string) error {
+	// Check if team exists first
+	team, err := s.teamRepository.GetTeamByID(ctx, teamID)
+	if err != nil {
+		return fmt.Errorf("failed to get team: %w", err)
+	}
+
+	if team == nil {
+		return ErrTeamNotFound
+	}
+
+	// Delete the team
+	if err := s.teamRepository.DeleteTeam(ctx, teamID); err != nil {
+		return fmt.Errorf("failed to delete team: %w", err)
+	}
+
+	return nil
 }
