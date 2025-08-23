@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -41,7 +42,7 @@ The system supports three authentication methods:
 - Key-based authentication (provide --key-file)
 - Both methods combined (provide both flags)`,
 
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		// Get flags
 		hostname, _ := cmd.Flags().GetString("hostname")
 		ip, _ := cmd.Flags().GetString("ip")
@@ -96,7 +97,11 @@ The system supports three authentication methods:
 			}
 			os.Exit(1)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("Error closing response body: %v", err)
+			}
+		}()
 
 		// Handle response
 		switch resp.StatusCode {
@@ -134,7 +139,7 @@ The output includes each machine's:
 
 Results are formatted in a tabular layout for easy reading.
 This command requires authentication and will only show machines you have permission to view.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		// Make the request
 		resp, err := makeAuthenticatedRequest("GET", "/api/v1/machines", nil)
 		if err != nil {
@@ -145,7 +150,11 @@ This command requires authentication and will only show machines you have permis
 			}
 			os.Exit(1)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("Error closing response body: %v", err)
+			}
+		}()
 
 		// Handle response
 		switch resp.StatusCode {
@@ -167,22 +176,29 @@ This command requires authentication and will only show machines you have permis
 
 			// Print styled header
 			fmt.Println("\n┌─────────────────────── MACHINES ───────────────────────┐")
-			fmt.Fprintln(w, "\033[1mID\tHOSTNAME\tIP ADDRESS\tCREATED AT\033[0m")
+			if _, err := fmt.Fprintln(w, "\033[1mID\tHOSTNAME\tIP ADDRESS\tCREATED AT\033[0m"); err != nil {
+				log.Printf("Error writing to tabwriter: %v", err)
+			}
 
 			// Print separator
-			fmt.Fprintln(w, "────────\t────────\t─────────\t───────\t──────────")
+			if _, err := fmt.Fprintln(w, "────────\t────────\t─────────\t───────\t──────────"); err != nil {
+				log.Printf("Error writing to tabwriter: %v", err)
+			}
 
 			// Print data rows
 			for _, m := range machines {
-
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+				if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 					m.ID,
 					m.Hostname,
 					m.IP,
-					m.CreatedAt.Format("Jan 02, 2006 15:04"))
+					m.CreatedAt.Format("Jan 02, 2006 15:04")); err != nil {
+					log.Printf("Error writing to tabwriter: %v", err)
+				}
 			}
 			fmt.Println("└──────────────────────────────────────────────────────────┘")
-			w.Flush()
+			if err := w.Flush(); err != nil {
+				log.Printf("Error flushing tabwriter: %v", err)
+			}
 
 			fmt.Printf("\nTotal: %d machines\n", len(machines))
 		case http.StatusUnauthorized:
@@ -194,6 +210,48 @@ This command requires authentication and will only show machines you have permis
 			os.Exit(1)
 		}
 	},
+}
+
+// machineRemoveFunction is a shared function to remove/delete a machine
+// This eliminates code duplication between rm and delete commands
+func machineRemoveFunction(_ *cobra.Command, args []string) {
+	// Get machine ID from args
+	machineID := args[0]
+
+	// Make the request
+	resp, err := makeAuthenticatedRequest("DELETE", fmt.Sprintf("/api/v1/machines/%s", machineID), nil)
+	if err != nil {
+		if strings.Contains(err.Error(), "no authentication token found") {
+			fmt.Println("Please log in first using the login command")
+		} else {
+			fmt.Println("Error:", err)
+		}
+		return // Already changed from os.Exit(1)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("Error closing response body: %v", err)
+		}
+	}()
+
+	// Handle response
+	switch resp.StatusCode {
+	case http.StatusNoContent:
+		fmt.Println("Machine removed successfully.")
+	case http.StatusUnauthorized:
+		fmt.Println("Unauthorized. Please log in again.")
+		return // Changed from os.Exit(1)
+	case http.StatusForbidden:
+		fmt.Println("You don't have permission to remove machines.")
+		return // Changed from os.Exit(1)
+	case http.StatusNotFound:
+		fmt.Println("Machine not found.")
+		return // Changed from os.Exit(1)
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
+		return // Changed from os.Exit(1)
+	}
 }
 
 // machinesRmCmd represents the rm command
@@ -209,41 +267,7 @@ Arguments:
 This command requires administrative privileges or ownership of the machine.
 Use with caution as all access configurations for this machine will be deleted.`,
 	Args: cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
-	Run: func(cmd *cobra.Command, args []string) {
-		// Get machine ID from args
-		machineID := args[0]
-
-		// Make the request
-		resp, err := makeAuthenticatedRequest("DELETE", fmt.Sprintf("/api/v1/machines/%s", machineID), nil)
-		if err != nil {
-			if strings.Contains(err.Error(), "no authentication token found") {
-				fmt.Println("Please log in first using the login command")
-			} else {
-				fmt.Println("Error:", err)
-			}
-			os.Exit(1)
-		}
-		defer resp.Body.Close()
-
-		// Handle response
-		switch resp.StatusCode {
-		case http.StatusNoContent:
-			fmt.Println("Machine removed successfully.")
-		case http.StatusUnauthorized:
-			fmt.Println("Unauthorized. Please log in again.")
-			os.Exit(1)
-		case http.StatusForbidden:
-			fmt.Println("You don't have permission to remove machines.")
-			os.Exit(1)
-		case http.StatusNotFound:
-			fmt.Println("Machine not found.")
-			os.Exit(1)
-		default:
-			body, _ := io.ReadAll(resp.Body)
-			fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
-			os.Exit(1)
-		}
-	},
+	Run:  machineRemoveFunction,
 }
 
 // machinesUpdateCmd represents the update command
@@ -331,7 +355,11 @@ will only be updated if explicitly specified.`,
 			}
 			os.Exit(1)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("Error closing response body: %v", err)
+			}
+		}()
 
 		// Handle response
 		switch resp.StatusCode {
@@ -398,7 +426,11 @@ Team members will gain access according to team permission policies.`,
 			}
 			os.Exit(1)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("Error closing response body: %v", err)
+			}
+		}()
 
 		// Handle response
 		switch resp.StatusCode {
@@ -466,7 +498,11 @@ have access through other teams or direct permissions.`,
 			}
 			os.Exit(1)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("Error closing response body: %v", err)
+			}
+		}()
 
 		// Handle response
 		switch resp.StatusCode {
@@ -489,6 +525,45 @@ have access through other teams or direct permissions.`,
 	},
 }
 
+// displayMachineDetails is a shared function to display machine information
+// This eliminates code duplication between get and get-by-ip commands
+func displayMachineDetails(resp *http.Response, resourceName string) {
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var machine struct {
+			ID         string    `json:"id"`
+			Hostname   string    `json:"hostname"`
+			IP         string    `json:"ip_address"`
+			AuthMethod string    `json:"auth_method"`
+			CreatedAt  time.Time `json:"created_at"`
+			UpdatedAt  time.Time `json:"updated_at"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&machine); err != nil {
+			fmt.Println("Error parsing response:", err)
+			return
+		}
+
+		// Display machine details
+		fmt.Println("\n┌─────────────────── MACHINE DETAILS ───────────────────┐")
+		fmt.Printf("  ID:            %s\n", machine.ID)
+		fmt.Printf("  Hostname:      %s\n", machine.Hostname)
+		fmt.Printf("  IP Address:    %s\n", machine.IP)
+		fmt.Printf("  Auth Method:   %s\n", machine.AuthMethod)
+		fmt.Printf("  Created At:    %s\n", machine.CreatedAt.Format("Jan 02, 2006 15:04:05"))
+		fmt.Printf("  Updated At:    %s\n", machine.UpdatedAt.Format("Jan 02, 2006 15:04:05"))
+		fmt.Println("└──────────────────────────────────────────────────────────┘")
+	case http.StatusUnauthorized:
+		fmt.Println("Unauthorized. Please log in again.")
+	case http.StatusForbidden:
+		fmt.Println("You don't have permission to view this machine.")
+	case http.StatusNotFound:
+		fmt.Printf("No machine found with the specified %s.\n", resourceName)
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
+	}
+}
+
 // machinesGetCmd represents the get command
 var machinesGetCmd = &cobra.Command{
 	Use:   "get [machine-id]",
@@ -507,7 +582,7 @@ The command displays detailed information including:
 This provides more detailed information than the 'list' command
 for a single machine record.`,
 	Args: cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		// Get machine ID from args
 		machineID := args[0]
 
@@ -519,49 +594,15 @@ for a single machine record.`,
 			} else {
 				fmt.Println("Error:", err)
 			}
-			os.Exit(1)
+			return
 		}
-		defer resp.Body.Close()
-
-		// Handle response
-		switch resp.StatusCode {
-		case http.StatusOK:
-			var machine struct {
-				ID         string    `json:"id"`
-				Hostname   string    `json:"hostname"`
-				IP         string    `json:"ip_address"`
-				AuthMethod string    `json:"auth_method"`
-				CreatedAt  time.Time `json:"created_at"`
-				UpdatedAt  time.Time `json:"updated_at"`
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("Error closing response body: %v", err)
 			}
-			if err := json.NewDecoder(resp.Body).Decode(&machine); err != nil {
-				fmt.Println("Error parsing response:", err)
-				os.Exit(1)
-			}
+		}()
 
-			// Display machine details
-			fmt.Println("\n┌─────────────────── MACHINE DETAILS ───────────────────┐")
-			fmt.Printf("  ID:            %s\n", machine.ID)
-			fmt.Printf("  Hostname:      %s\n", machine.Hostname)
-			fmt.Printf("  IP Address:    %s\n", machine.IP)
-			fmt.Printf("  Auth Method:   %s\n", machine.AuthMethod)
-			fmt.Printf("  Created At:    %s\n", machine.CreatedAt.Format("Jan 02, 2006 15:04:05"))
-			fmt.Printf("  Updated At:    %s\n", machine.UpdatedAt.Format("Jan 02, 2006 15:04:05"))
-			fmt.Println("└──────────────────────────────────────────────────────────┘")
-		case http.StatusUnauthorized:
-			fmt.Println("Unauthorized. Please log in again.")
-			os.Exit(1)
-		case http.StatusForbidden:
-			fmt.Println("You don't have permission to view this machine.")
-			os.Exit(1)
-		case http.StatusNotFound:
-			fmt.Println("Machine not found.")
-			os.Exit(1)
-		default:
-			body, _ := io.ReadAll(resp.Body)
-			fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
-			os.Exit(1)
-		}
+		displayMachineDetails(resp, "ID")
 	},
 }
 
@@ -578,7 +619,7 @@ This command is useful when you know a machine's IP address but not its ID.
 It returns the same detailed information as the 'get' command if a match is found.
 If multiple machines share the same IP (unusual), only the first match is returned.`,
 	Args: cobra.ExactArgs(1), // Require exactly one argument (the IP address)
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		// Get IP address from args
 		ipAddress := args[0]
 
@@ -590,49 +631,15 @@ If multiple machines share the same IP (unusual), only the first match is return
 			} else {
 				fmt.Println("Error:", err)
 			}
-			os.Exit(1)
+			return
 		}
-		defer resp.Body.Close()
-
-		// Handle response
-		switch resp.StatusCode {
-		case http.StatusOK:
-			var machine struct {
-				ID         string    `json:"id"`
-				Hostname   string    `json:"hostname"`
-				IP         string    `json:"ip_address"`
-				AuthMethod string    `json:"auth_method"`
-				CreatedAt  time.Time `json:"created_at"`
-				UpdatedAt  time.Time `json:"updated_at"`
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("Error closing response body: %v", err)
 			}
-			if err := json.NewDecoder(resp.Body).Decode(&machine); err != nil {
-				fmt.Println("Error parsing response:", err)
-				os.Exit(1)
-			}
+		}()
 
-			// Display machine details
-			fmt.Println("\n┌─────────────────── MACHINE DETAILS ───────────────────┐")
-			fmt.Printf("  ID:            %s\n", machine.ID)
-			fmt.Printf("  Hostname:      %s\n", machine.Hostname)
-			fmt.Printf("  IP Address:    %s\n", machine.IP)
-			fmt.Printf("  Auth Method:   %s\n", machine.AuthMethod)
-			fmt.Printf("  Created At:    %s\n", machine.CreatedAt.Format("Jan 02, 2006 15:04:05"))
-			fmt.Printf("  Updated At:    %s\n", machine.UpdatedAt.Format("Jan 02, 2006 15:04:05"))
-			fmt.Println("└──────────────────────────────────────────────────────────┘")
-		case http.StatusUnauthorized:
-			fmt.Println("Unauthorized. Please log in again.")
-			os.Exit(1)
-		case http.StatusForbidden:
-			fmt.Println("You don't have permission to view this machine.")
-			os.Exit(1)
-		case http.StatusNotFound:
-			fmt.Println("No machine found with the specified IP address.")
-			os.Exit(1)
-		default:
-			body, _ := io.ReadAll(resp.Body)
-			fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
-			os.Exit(1)
-		}
+		displayMachineDetails(resp, "IP address")
 	},
 }
 
@@ -650,41 +657,7 @@ This operation permanently removes the machine and cannot be undone.
 All associations with teams and access configurations will be removed.
 Use with caution when deleting production machines.`,
 	Args: cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
-	Run: func(cmd *cobra.Command, args []string) {
-		// Get machine ID from args
-		machineID := args[0]
-
-		// Make the request
-		resp, err := makeAuthenticatedRequest("DELETE", fmt.Sprintf("/api/v1/machines/%s", machineID), nil)
-		if err != nil {
-			if strings.Contains(err.Error(), "no authentication token found") {
-				fmt.Println("Please log in first using the login command")
-			} else {
-				fmt.Println("Error:", err)
-			}
-			os.Exit(1)
-		}
-		defer resp.Body.Close()
-
-		// Handle response
-		switch resp.StatusCode {
-		case http.StatusNoContent:
-			fmt.Println("Machine deleted successfully.")
-		case http.StatusUnauthorized:
-			fmt.Println("Unauthorized. Please log in again.")
-			os.Exit(1)
-		case http.StatusForbidden:
-			fmt.Println("You don't have permission to delete machines.")
-			os.Exit(1)
-		case http.StatusNotFound:
-			fmt.Println("Machine not found.")
-			os.Exit(1)
-		default:
-			body, _ := io.ReadAll(resp.Body)
-			fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
-			os.Exit(1)
-		}
-	},
+	Run:  machineRemoveFunction,
 }
 
 // makeAuthenticatedRequest makes an HTTP request with authentication
