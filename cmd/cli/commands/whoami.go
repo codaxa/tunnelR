@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/spf13/cobra"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
-	"github.com/spf13/cobra"
 )
 
 type whoamiResponse struct {

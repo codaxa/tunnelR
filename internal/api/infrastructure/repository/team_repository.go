@@ -134,6 +134,32 @@ func (r *TeamRepository) IsUserInTeam(ctx context.Context, userID, teamID string
 	return exists, nil
 }
 
+// GetTeamUsers gets team users
+func (r *TeamRepository) GetTeamUsers(ctx context.Context, teamID string) ([]model.User, error) {
+	query := `SELECT id, username, role, created_at, updated_at FROM users WHERE ID IN(SELECT user_id FROM user_teams WHERE team_id = $1)`
+
+	rows, err := r.db.Query(ctx, query, teamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []model.User
+	for rows.Next() {
+		var user model.User
+		if err := rows.Scan(&user.ID, &user.Username, &user.Role, &user.CreatedAt, &user.UpdatedAt); err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
+
 // DeleteTeam deletes a team and all associated user_team relationships
 func (r *TeamRepository) DeleteTeam(ctx context.Context, teamID string) error {
 	tx, err := r.db.Begin(ctx)

@@ -7,8 +7,8 @@ import "time"
 type Team struct {
 	ID        string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	Name      string    `json:"name" gorm:"type:varchar(100);not null;uniqueIndex" validate:"required,min=3,max=100"`
-	CreatedAt time.Time `json:"created_at" gorm:"default:now();autoCreateTime" validate:"required"`
-	UpdatedAt time.Time `json:"updated_at" gorm:"default:now();autoUpdateTime" validate:"required"`
+	CreatedAt time.Time `json:"created_at" gorm:"default:now();autoCreateTime"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"default:now();autoUpdateTime"`
 	Users     []User    `gorm:"many2many:user_teams;"`
 }
 

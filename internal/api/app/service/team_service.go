@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/codaxa/tunnelR.git/internal/api/core/model"
 	"github.com/codaxa/tunnelR.git/internal/api/core/repository"
@@ -40,11 +39,8 @@ func NewTeamService(teamRepo repository.TeamRepository, userRepo repository.User
 // CreateTeam creates a new team and adds the creator as a member
 func (s *TeamService) CreateTeam(ctx context.Context, name, userID string) (string, error) {
 	// Initialize team with current time for timestamps
-	now := time.Now()
 	team := model.Team{
-		Name:      name,
-		CreatedAt: now,
-		UpdatedAt: now,
+		Name: name,
 	}
 
 	// Validate team
@@ -98,6 +94,12 @@ func (s *TeamService) GetTeamByID(ctx context.Context, teamID, userID string) (*
 		return nil, ErrUserNotInTeam
 	}
 
+	teamUsers, err := s.teamRepository.GetTeamUsers(ctx, teamID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get team members: %w", err)
+	}
+
+	team.Users = teamUsers
 	return team, nil
 }
 

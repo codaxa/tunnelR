@@ -31,8 +31,6 @@ func NewRouter(authService *service.AuthService, teamService *service.TeamServic
 			r.Get("/whoami", userHandler.GetUserInfo)
 
 			r.Get("/teams", teamHandler.GetTeams)
-			r.Get("/teams/{id}", teamHandler.GetTeam)
-
 		})
 
 		// Admin-only routes
@@ -41,8 +39,8 @@ func NewRouter(authService *service.AuthService, teamService *service.TeamServic
 			r.Post("/register", userHandler.Register)
 
 			r.Post("/teams", teamHandler.CreateTeam)
-			r.Delete("/teams/{id}", teamHandler.DeleteTeam) // Add the delete endpoint
-
+			r.Delete("/teams/{id}", teamHandler.DeleteTeam)
+			r.Get("/teams/{id}", teamHandler.GetTeam)
 		})
 	})
 

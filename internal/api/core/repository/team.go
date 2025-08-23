@@ -32,4 +32,6 @@ type TeamRepository interface {
 
 	// GetTeamByName retrieves a team by its name
 	GetTeamByName(ctx context.Context, name string) (*model.Team, error)
+
+	GetTeamUsers(ctx context.Context, teamID string) ([]model.User, error)
 }
