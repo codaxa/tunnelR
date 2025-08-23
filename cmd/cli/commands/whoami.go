@@ -4,17 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/spf13/cobra"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"time"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
-
 )
 
 type whoamiResponse struct {
@@ -69,7 +66,6 @@ This command uses the saved authentication token from previous login.`,
 
 		// Construct the API endpoint URL properly
 		apiURL := serverURL.ResolveReference(&url.URL{Path: "api/v1/whoami"})
-
 
 		// Create a context with timeout
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
