@@ -200,3 +200,40 @@ func (h *TeamHandler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 	// Return success response with no content
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// AddUserToTeam handles adding a user to a team
+func (h *TeamHandler) AddUserToTeam(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	if teamID == "" {
+		http.Error(w, "Team ID is required", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		UserID string `json:"user_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request format", http.StatusBadRequest)
+		return
+	}
+
+	if req.UserID == "" {
+		http.Error(w, "User ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Add user to team
+	if err := h.teamService.AddUserToTeam(r.Context(), teamID, req.UserID); err != nil {
+		if errors.Is(err, service.ErrTeamNotFound) {
+			http.Error(w, "Team not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("Error adding user to team: %v", err)
+		http.Error(w, "Failed to add user to team", http.StatusInternalServerError)
+		return
+	}
+
+	// Return success with no content
+	w.WriteHeader(http.StatusNoContent)
+}
