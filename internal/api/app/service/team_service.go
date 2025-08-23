@@ -72,6 +72,16 @@ func (s *TeamService) GetTeamsByUserID(ctx context.Context, userID string) ([]*m
 	return teams, nil
 }
 
+// GetMachinesByTeamID retrieves all machines that belong to a team
+func (s *TeamService) GetMachinesByTeamID(ctx context.Context, teamID string) ([]*model.Machine, error) {
+	machines, err := s.teamRepository.GetMachinesByTeamID(ctx, teamID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get machine: %w", err)
+	}
+
+	return machines, nil
+}
+
 // GetTeamByID retrieves a team by its ID, checking if the user has access
 func (s *TeamService) GetTeamByID(ctx context.Context, teamID, userID string) (*model.Team, error) {
 	// Get team first

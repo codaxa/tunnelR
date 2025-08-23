@@ -160,6 +160,32 @@ func (r *TeamRepository) GetTeamUsers(ctx context.Context, teamID string) ([]mod
 	return users, nil
 }
 
+// GetMachinesByTeamID retrieves all machines that belong to a team
+func (r *TeamRepository) GetMachinesByTeamID(ctx context.Context, teamID string) ([]*model.Machine, error) {
+	query := `SELECT id, hostname, ip_address::text, created_at, updated_at FROM machines WHERE ID IN (SELECT machine_id FROM machine_teams WHERE team_id = $1)`
+
+	rows, err := r.db.Query(ctx, query, teamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var machines []*model.Machine
+	for rows.Next() {
+		var machine model.Machine
+		if err := rows.Scan(&machine.ID, &machine.Hostname, &machine.IPAddress, &machine.CreatedAt, &machine.UpdatedAt); err != nil {
+			return nil, err
+		}
+		machines = append(machines, &machine)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return machines, nil
+}
+
 // DeleteTeam deletes a team and all associated user_team relationships
 func (r *TeamRepository) DeleteTeam(ctx context.Context, teamID string) error {
 	tx, err := r.db.Begin(ctx)

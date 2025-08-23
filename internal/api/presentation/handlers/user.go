@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -11,23 +10,20 @@ import (
 	appctx "github.com/codaxa/tunnelR.git/internal/api/app/context"
 	"github.com/codaxa/tunnelR.git/internal/api/app/service"
 	"github.com/codaxa/tunnelR.git/internal/api/core/model"
+	"github.com/codaxa/tunnelR.git/internal/api/presentation/utils"
 	"github.com/golang-jwt/jwt"
 )
 
-// AuthServicer defines the authentication service interface
-type AuthServicer interface {
-	Register(ctx context.Context, username, password, role string) error
-	Login(ctx context.Context, username, password string) (string, error)
-}
-
 // UserHandler handles HTTP requests related to user operations.
 type UserHandler struct {
-	authService AuthServicer
+	authService *service.AuthService
 }
 
 // NewUserHandler creates and returns a new UserHandler instance.
-func NewUserHandler(authService AuthServicer) *UserHandler {
-	return &UserHandler{authService: authService}
+func NewUserHandler(authService *service.AuthService) *UserHandler {
+	return &UserHandler{
+		authService: authService,
+	}
 }
 
 type tokenResponse struct {
@@ -115,6 +111,31 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Printf("ERROR encoding response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// GetUserMachines handles the retrieval of machines that a user has access to
+func (h *UserHandler) GetUserMachines(w http.ResponseWriter, r *http.Request) {
+
+	userID, err := authutils.ExtractUserID(r)
+	if err != nil {
+		log.Printf("Error extracting user ID: %v", err)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	machines, err := h.authService.GetMachinesByUserID(r.Context(), userID)
+	if err != nil {
+		log.Printf("Error getting machines: %v", err)
+		http.Error(w, "Failed to retrieve machines", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(machines); err != nil {
+		log.Printf("Error encoding response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}

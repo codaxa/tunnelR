@@ -9,11 +9,12 @@ import (
 )
 
 // NewRouter creates a new HTTP router with the necessary routes and middleware.
-func NewRouter(authService *service.AuthService, teamService *service.TeamService) *chi.Mux {
+func NewRouter(authService *service.AuthService, teamService *service.TeamService, machineService *service.MachineService) *chi.Mux {
 	router := chi.NewRouter()
 
 	userHandler := handlers.NewUserHandler(authService)
 	teamHandler := handlers.NewTeamHandler(teamService)
+	machineHandler := handlers.NewMachineHandler(machineService)
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
 	// Public routes
@@ -31,6 +32,9 @@ func NewRouter(authService *service.AuthService, teamService *service.TeamServic
 			r.Get("/whoami", userHandler.GetUserInfo)
 
 			r.Get("/teams", teamHandler.GetTeams)
+			r.Get("/user/machines", userHandler.GetUserMachines)
+			r.Get("/machines/id/{id}", machineHandler.GetMachineByID)
+			r.Get("/machines/ip/{ip}", machineHandler.GetMachineByIPAddress)
 		})
 
 		// Admin-only routes
@@ -42,7 +46,14 @@ func NewRouter(authService *service.AuthService, teamService *service.TeamServic
 			r.Get("/teams/{id}", teamHandler.GetTeam)
 			r.Post("/teams/{id}/users/{userId}", teamHandler.AddUserToTeam)
 			r.Delete("/teams/{id}/users/{userId}", teamHandler.RemoveUserFromTeam)
+			r.Get("/teams/{id}/machines", teamHandler.GetTeamMachines)
 
+			r.Post("/machines", machineHandler.CreateMachine)
+			r.Put("/machines", machineHandler.UpdateMachine)
+			r.Delete("/machines/{id}", machineHandler.DeleteMachine)
+			r.Get("/machines/{id}/teams", machineHandler.GetTeamsForMachine)
+			r.Post("/machines/teams", machineHandler.AddTeamToMachine)
+			r.Delete("/machines/teams", machineHandler.RemoveTeamFromMachine)
 		})
 	})
 

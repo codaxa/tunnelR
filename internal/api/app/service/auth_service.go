@@ -84,6 +84,16 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (str
 	return token, nil
 }
 
+// GetMachinesByUserID retrieves all machines that a user has access to
+func (s *AuthService) GetMachinesByUserID(ctx context.Context, userID string) ([]*model.Machine, error) {
+	machines, err := s.userRepository.GetMachinesByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get machine: %w", err)
+	}
+
+	return machines, nil
+}
+
 func (s *AuthService) generateJWT(user *model.User) (string, error) {
 	now := time.Now()
 	claims := jwt.MapClaims{
