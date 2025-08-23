@@ -18,28 +18,30 @@ import (
 var machinesCmd = &cobra.Command{
 	Use:   "machines",
 	Short: "Manage machines in the system",
-	Long:  `Add, list, and remove machines from the system.`,
+	Long: `Comprehensive machine management - add, list, update, delete, and associate machines with teams. 
+Machines represent physical or virtual servers that can be accessed through the system.
+Use subcommands to perform specific operations on machines.`,
 }
 
 // machinesAddCmd represents the add command
 var machinesAddCmd = &cobra.Command{
 	Use:   "add",
-	Short: "Add a new machine",
-	Long:  `Add a new machine to the system.`,
+	Short: "Add a new machine to the system",
+	Long: `Register a new machine in the system with authentication credentials.
+Required flags:
+  --hostname, -n    Hostname or descriptive name for the machine
+  --ip, -i          IP address for connecting to the machine
+
+Authentication (at least one required):
+  --password, -p    SSH password for password-based authentication
+  --key-file, -k    Path to SSH private key file for key-based authentication
+
+The system supports three authentication methods:
+- Password authentication (provide --password)
+- Key-based authentication (provide --key-file)
+- Both methods combined (provide both flags)`,
+
 	Run: func(cmd *cobra.Command, args []string) {
-		// Load config to get token first
-		config, err := loadConfig()
-		if err != nil {
-			fmt.Println("Error loading config:", err)
-			os.Exit(1)
-		}
-
-		// Check if token exists
-		if config.Token == "" {
-			fmt.Println("Please log in first using the login command")
-			os.Exit(1)
-		}
-
 		// Get flags
 		hostname, _ := cmd.Flags().GetString("hostname")
 		ip, _ := cmd.Flags().GetString("ip")
@@ -48,22 +50,33 @@ var machinesAddCmd = &cobra.Command{
 
 		// Ensure at least one authentication method is provided
 		if keyFile == "" && password == "" {
-			fmt.Println("Error: You must provide either a key file or password or both")
+			fmt.Println("Error: You must provide either a key file or password")
 			os.Exit(1)
 		}
 
 		// Prepare request payload
 		payload := map[string]string{
-			"hostname": hostname,
-			"ip":       ip,
+			"hostname":   hostname,
+			"ip_address": ip,
 		}
 
-		// Add authentication methods to payload
-		if password != "" {
+		// Set auth method and add authentication data to payload
+		if password != "" && keyFile != "" {
+			payload["auth_method"] = "both"
 			payload["password"] = password
-		}
 
-		if keyFile != "" {
+			// Read key file content
+			keyData, err := os.ReadFile(keyFile)
+			if err != nil {
+				fmt.Printf("Error reading key file: %s\n", err)
+				os.Exit(1)
+			}
+			payload["key_data"] = string(keyData)
+		} else if password != "" {
+			payload["auth_method"] = "password"
+			payload["password"] = password
+		} else if keyFile != "" {
+			payload["auth_method"] = "key"
 			// Read key file content
 			keyData, err := os.ReadFile(keyFile)
 			if err != nil {
@@ -76,7 +89,11 @@ var machinesAddCmd = &cobra.Command{
 		// Make the request
 		resp, err := makeAuthenticatedRequest("POST", "/api/v1/machines", payload)
 		if err != nil {
-			fmt.Println("Error:", err)
+			if strings.Contains(err.Error(), "no authentication token found") {
+				fmt.Println("Please log in first using the login command")
+			} else {
+				fmt.Println("Error:", err)
+			}
 			os.Exit(1)
 		}
 		defer resp.Body.Close()
@@ -107,8 +124,16 @@ var machinesAddCmd = &cobra.Command{
 // machinesListCmd represents the list command
 var machinesListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List all machines",
-	Long:  `Display a list of all machines in the system.`,
+	Short: "List all accessible machines",
+	Long: `Display a comprehensive list of all machines you have access to in the system.
+The output includes each machine's:
+- Unique identifier (ID)
+- Hostname
+- IP address
+- Creation timestamp
+
+Results are formatted in a tabular layout for easy reading.
+This command requires authentication and will only show machines you have permission to view.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Make the request
 		resp, err := makeAuthenticatedRequest("GET", "/api/v1/machines", nil)
@@ -174,9 +199,16 @@ var machinesListCmd = &cobra.Command{
 // machinesRmCmd represents the rm command
 var machinesRmCmd = &cobra.Command{
 	Use:   "rm [machine-id]",
-	Short: "Remove a machine",
-	Long:  `Remove a machine from the system by its ID.`,
-	Args:  cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
+	Short: "Remove a machine from the system",
+	Long: `Permanently remove a machine from the system by its unique identifier.
+This operation cannot be undone and will remove all associations with teams.
+
+Arguments:
+  machine-id    The unique identifier of the machine to remove
+
+This command requires administrative privileges or ownership of the machine.
+Use with caution as all access configurations for this machine will be deleted.`,
+	Args: cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
 	Run: func(cmd *cobra.Command, args []string) {
 		// Get machine ID from args
 		machineID := args[0]
@@ -217,9 +249,23 @@ var machinesRmCmd = &cobra.Command{
 // machinesUpdateCmd represents the update command
 var machinesUpdateCmd = &cobra.Command{
 	Use:   "update [machine-id]",
-	Short: "Update a machine",
-	Long:  `Update properties of an existing machine in the system.`,
-	Args:  cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
+	Short: "Update machine properties",
+	Long: `Modify properties of an existing machine in the system.
+You can update hostname, IP address, and authentication methods.
+
+Arguments:
+  machine-id    The unique identifier of the machine to update
+
+Available flags:
+  --hostname, -n       New hostname for the machine
+  --ip, -i             New IP address for the machine
+  --auth-method, -a    Authentication method (password, key, or both)
+  --password, -p       New SSH password for the machine
+  --key-file, -k       Path to new SSH private key file
+
+At least one update parameter must be provided. Authentication credentials
+will only be updated if explicitly specified.`,
+	Args: cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
 	Run: func(cmd *cobra.Command, args []string) {
 		// Get machine ID from args
 		machineID := args[0]
@@ -229,18 +275,36 @@ var machinesUpdateCmd = &cobra.Command{
 		ip, _ := cmd.Flags().GetString("ip")
 		keyFile, _ := cmd.Flags().GetString("key-file")
 		password, _ := cmd.Flags().GetString("password")
+		authMethod, _ := cmd.Flags().GetString("auth-method")
 
-		// Prepare request payload - only include fields that were specified
-		payload := map[string]string{}
+		// Prepare request payload
+		payload := map[string]string{
+			"id": machineID,
+		}
+
+		// Add other fields if they were provided
 		if hostname != "" {
 			payload["hostname"] = hostname
 		}
 		if ip != "" {
 			payload["ip"] = ip
 		}
+
+		// Set auth_method based on explicit flag or infer from credentials
+		if authMethod != "" {
+			payload["auth_method"] = authMethod
+		} else if password != "" && keyFile != "" {
+			payload["auth_method"] = "both"
+		} else if password != "" {
+			payload["auth_method"] = "password"
+		} else if keyFile != "" {
+			payload["auth_method"] = "key"
+		}
+
 		if password != "" {
 			payload["password"] = password
 		}
+
 		if keyFile != "" {
 			// Read key file content
 			keyData, err := os.ReadFile(keyFile)
@@ -248,17 +312,17 @@ var machinesUpdateCmd = &cobra.Command{
 				fmt.Printf("Error reading key file: %s\n", err)
 				os.Exit(1)
 			}
-			payload["key_data"] = string(keyData)
+			payload["key"] = string(keyData)
 		}
 
-		// Check if there's anything to update
-		if len(payload) == 0 {
-			fmt.Println("No update parameters provided. Use --hostname, --ip, --password, --key-file, or --team-id flags.")
+		// Check if there's anything to update besides the ID
+		if len(payload) <= 1 {
+			fmt.Println("No update parameters provided. Use --hostname, --ip, --auth-method, --password, or --key-file flags.")
 			os.Exit(1)
 		}
 
 		// Make the request
-		resp, err := makeAuthenticatedRequest("PUT", fmt.Sprintf("/api/v1/machines/%s", machineID), payload)
+		resp, err := makeAuthenticatedRequest("PUT", "/api/v1/machines", payload)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -278,6 +342,344 @@ var machinesUpdateCmd = &cobra.Command{
 			os.Exit(1)
 		case http.StatusForbidden:
 			fmt.Println("You don't have permission to update machines.")
+			os.Exit(1)
+		case http.StatusNotFound:
+			fmt.Println("Machine not found.")
+			os.Exit(1)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
+			os.Exit(1)
+		}
+	},
+}
+
+// machinesAddToTeamCmd represents the command to add a machine to a team
+var machinesAddToTeamCmd = &cobra.Command{
+	Use:   "add-to-team [machine-id]",
+	Short: "Associate a machine with a team",
+	Long: `Add an existing machine to a team to grant team members access to the machine.
+
+Arguments:
+  machine-id    The unique identifier of the machine to add to a team
+
+Required flags:
+  --team-id, -t    ID of the team to add the machine to
+
+Optional flags:
+  --description, -d    Explain why this machine is being added to the team
+  --role, -r           Specify machine's role (e.g., 'production', 'development')
+  --temporary, -m      Mark as a temporary addition (defaults to false)
+
+This operation requires appropriate permissions for both the machine and the team.
+Team members will gain access according to team permission policies.`,
+	Args: cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
+	Run: func(cmd *cobra.Command, args []string) {
+		// Get machine ID from args
+		machineID := args[0]
+
+		// Get team ID from flag
+		teamID, _ := cmd.Flags().GetString("team-id")
+
+		// Check if team ID was provided
+		if teamID == "" {
+			fmt.Println("Error: team-id is required")
+			os.Exit(1)
+		}
+
+		// Prepare request payload
+		payload := map[string]string{
+			"machine_id": machineID,
+			"team_id":    teamID,
+		}
+
+		// Make the request
+		resp, err := makeAuthenticatedRequest("POST", "/api/v1/machines/teams", payload)
+		if err != nil {
+			if strings.Contains(err.Error(), "no authentication token found") {
+				fmt.Println("Please log in first using the login command")
+			} else {
+				fmt.Println("Error:", err)
+			}
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+
+		// Handle response
+		switch resp.StatusCode {
+		case http.StatusOK, http.StatusCreated:
+			fmt.Println("Machine successfully added to team.")
+		case http.StatusUnauthorized:
+			fmt.Println("Unauthorized. Please log in again.")
+			os.Exit(1)
+		case http.StatusForbidden:
+			fmt.Println("You don't have permission to add machines to teams.")
+			os.Exit(1)
+		case http.StatusNotFound:
+			fmt.Println("Machine or team not found.")
+			os.Exit(1)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
+			os.Exit(1)
+		}
+	},
+}
+
+// machinesRemoveFromTeamCmd represents the command to remove a machine from a team
+var machinesRemoveFromTeamCmd = &cobra.Command{
+	Use:   "remove-from-team [machine-id]",
+	Short: "Disassociate a machine from a team",
+	Long: `Remove a machine from a team, revoking access for team members.
+
+Arguments:
+  machine-id    The unique identifier of the machine to remove from a team
+
+Required flags:
+  --team-id, -t    ID of the team to remove the machine from
+
+This operation requires administrative privileges for the team.
+Team members will immediately lose access to the machine unless they
+have access through other teams or direct permissions.`,
+	Args: cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
+	Run: func(cmd *cobra.Command, args []string) {
+		// Get machine ID from args
+		machineID := args[0]
+
+		// Get team ID from flag
+		teamID, _ := cmd.Flags().GetString("team-id")
+
+		// Check if team ID was provided
+		if teamID == "" {
+			fmt.Println("Error: team-id is required")
+			os.Exit(1)
+		}
+
+		// Prepare request payload
+		payload := map[string]string{
+			"machine_id": machineID,
+			"team_id":    teamID,
+		}
+
+		// Make the request
+		resp, err := makeAuthenticatedRequest("DELETE", "/api/v1/machines/teams", payload)
+		if err != nil {
+			if strings.Contains(err.Error(), "no authentication token found") {
+				fmt.Println("Please log in first using the login command")
+			} else {
+				fmt.Println("Error:", err)
+			}
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+
+		// Handle response
+		switch resp.StatusCode {
+		case http.StatusOK, http.StatusNoContent:
+			fmt.Println("Machine successfully removed from team.")
+		case http.StatusUnauthorized:
+			fmt.Println("Unauthorized. Please log in again.")
+			os.Exit(1)
+		case http.StatusForbidden:
+			fmt.Println("You don't have permission to remove machines from teams.")
+			os.Exit(1)
+		case http.StatusNotFound:
+			fmt.Println("Machine or team not found, or machine is not in the specified team.")
+			os.Exit(1)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
+			os.Exit(1)
+		}
+	},
+}
+
+// machinesGetCmd represents the get command
+var machinesGetCmd = &cobra.Command{
+	Use:   "get [machine-id]",
+	Short: "Get detailed machine information",
+	Long: `Retrieve comprehensive information about a specific machine by its ID.
+
+Arguments:
+  machine-id    The unique identifier of the machine to retrieve
+
+The command displays detailed information including:
+- Machine ID and hostname
+- IP address configuration
+- Authentication method in use
+- Creation and last update timestamps
+
+This provides more detailed information than the 'list' command
+for a single machine record.`,
+	Args: cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
+	Run: func(cmd *cobra.Command, args []string) {
+		// Get machine ID from args
+		machineID := args[0]
+
+		// Make the request
+		resp, err := makeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/id/%s", machineID), nil)
+		if err != nil {
+			if strings.Contains(err.Error(), "no authentication token found") {
+				fmt.Println("Please log in first using the login command")
+			} else {
+				fmt.Println("Error:", err)
+			}
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+
+		// Handle response
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var machine struct {
+				ID         string    `json:"id"`
+				Hostname   string    `json:"hostname"`
+				IP         string    `json:"ip_address"`
+				AuthMethod string    `json:"auth_method"`
+				CreatedAt  time.Time `json:"created_at"`
+				UpdatedAt  time.Time `json:"updated_at"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&machine); err != nil {
+				fmt.Println("Error parsing response:", err)
+				os.Exit(1)
+			}
+
+			// Display machine details
+			fmt.Println("\n┌─────────────────── MACHINE DETAILS ───────────────────┐")
+			fmt.Printf("  ID:            %s\n", machine.ID)
+			fmt.Printf("  Hostname:      %s\n", machine.Hostname)
+			fmt.Printf("  IP Address:    %s\n", machine.IP)
+			fmt.Printf("  Auth Method:   %s\n", machine.AuthMethod)
+			fmt.Printf("  Created At:    %s\n", machine.CreatedAt.Format("Jan 02, 2006 15:04:05"))
+			fmt.Printf("  Updated At:    %s\n", machine.UpdatedAt.Format("Jan 02, 2006 15:04:05"))
+			fmt.Println("└──────────────────────────────────────────────────────────┘")
+		case http.StatusUnauthorized:
+			fmt.Println("Unauthorized. Please log in again.")
+			os.Exit(1)
+		case http.StatusForbidden:
+			fmt.Println("You don't have permission to view this machine.")
+			os.Exit(1)
+		case http.StatusNotFound:
+			fmt.Println("Machine not found.")
+			os.Exit(1)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
+			os.Exit(1)
+		}
+	},
+}
+
+// machinesGetByIPCmd represents the command to get a machine by IP address
+var machinesGetByIPCmd = &cobra.Command{
+	Use:   "get-by-ip [ip-address]",
+	Short: "Find machine by IP address",
+	Long: `Locate and display machine details using its IP address instead of ID.
+
+Arguments:
+  ip-address    The IP address of the machine to find
+
+This command is useful when you know a machine's IP address but not its ID.
+It returns the same detailed information as the 'get' command if a match is found.
+If multiple machines share the same IP (unusual), only the first match is returned.`,
+	Args: cobra.ExactArgs(1), // Require exactly one argument (the IP address)
+	Run: func(cmd *cobra.Command, args []string) {
+		// Get IP address from args
+		ipAddress := args[0]
+
+		// Make the request
+		resp, err := makeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/ip/%s", ipAddress), nil)
+		if err != nil {
+			if strings.Contains(err.Error(), "no authentication token found") {
+				fmt.Println("Please log in first using the login command")
+			} else {
+				fmt.Println("Error:", err)
+			}
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+
+		// Handle response
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var machine struct {
+				ID         string    `json:"id"`
+				Hostname   string    `json:"hostname"`
+				IP         string    `json:"ip_address"`
+				AuthMethod string    `json:"auth_method"`
+				CreatedAt  time.Time `json:"created_at"`
+				UpdatedAt  time.Time `json:"updated_at"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&machine); err != nil {
+				fmt.Println("Error parsing response:", err)
+				os.Exit(1)
+			}
+
+			// Display machine details
+			fmt.Println("\n┌─────────────────── MACHINE DETAILS ───────────────────┐")
+			fmt.Printf("  ID:            %s\n", machine.ID)
+			fmt.Printf("  Hostname:      %s\n", machine.Hostname)
+			fmt.Printf("  IP Address:    %s\n", machine.IP)
+			fmt.Printf("  Auth Method:   %s\n", machine.AuthMethod)
+			fmt.Printf("  Created At:    %s\n", machine.CreatedAt.Format("Jan 02, 2006 15:04:05"))
+			fmt.Printf("  Updated At:    %s\n", machine.UpdatedAt.Format("Jan 02, 2006 15:04:05"))
+			fmt.Println("└──────────────────────────────────────────────────────────┘")
+		case http.StatusUnauthorized:
+			fmt.Println("Unauthorized. Please log in again.")
+			os.Exit(1)
+		case http.StatusForbidden:
+			fmt.Println("You don't have permission to view this machine.")
+			os.Exit(1)
+		case http.StatusNotFound:
+			fmt.Println("No machine found with the specified IP address.")
+			os.Exit(1)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
+			os.Exit(1)
+		}
+	},
+}
+
+// machinesDeleteCmd represents the delete command (alias for rm)
+var machinesDeleteCmd = &cobra.Command{
+	Use:   "delete [machine-id]",
+	Short: "Delete a machine (alias for rm)",
+	Long: `Permanently delete a machine from the system by its unique identifier.
+This is an alias for the 'rm' command providing identical functionality.
+
+Arguments:
+  machine-id    The unique identifier of the machine to delete
+
+This operation permanently removes the machine and cannot be undone.
+All associations with teams and access configurations will be removed.
+Use with caution when deleting production machines.`,
+	Args: cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
+	Run: func(cmd *cobra.Command, args []string) {
+		// Get machine ID from args
+		machineID := args[0]
+
+		// Make the request
+		resp, err := makeAuthenticatedRequest("DELETE", fmt.Sprintf("/api/v1/machines/%s", machineID), nil)
+		if err != nil {
+			if strings.Contains(err.Error(), "no authentication token found") {
+				fmt.Println("Please log in first using the login command")
+			} else {
+				fmt.Println("Error:", err)
+			}
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+
+		// Handle response
+		switch resp.StatusCode {
+		case http.StatusNoContent:
+			fmt.Println("Machine deleted successfully.")
+		case http.StatusUnauthorized:
+			fmt.Println("Unauthorized. Please log in again.")
+			os.Exit(1)
+		case http.StatusForbidden:
+			fmt.Println("You don't have permission to delete machines.")
 			os.Exit(1)
 		case http.StatusNotFound:
 			fmt.Println("Machine not found.")
@@ -339,6 +741,11 @@ func init() {
 	machinesCmd.AddCommand(machinesListCmd)
 	machinesCmd.AddCommand(machinesRmCmd)
 	machinesCmd.AddCommand(machinesUpdateCmd)
+	machinesCmd.AddCommand(machinesAddToTeamCmd)
+	machinesCmd.AddCommand(machinesRemoveFromTeamCmd)
+	machinesCmd.AddCommand(machinesGetCmd)     // Add the new get command
+	machinesCmd.AddCommand(machinesGetByIPCmd) // Add the new get-by-ip command
+	machinesCmd.AddCommand(machinesDeleteCmd)  // Add the new delete command (alias for rm)
 
 	// Add flags to the add command
 	machinesAddCmd.Flags().StringP("hostname", "n", "", "Hostname of the machine")
@@ -357,5 +764,23 @@ func init() {
 	// Add flags to the update command
 	machinesUpdateCmd.Flags().StringP("hostname", "n", "", "New hostname for the machine")
 	machinesUpdateCmd.Flags().StringP("ip", "i", "", "New IP address for the machine")
-	machinesUpdateCmd.Flags().StringP("team-id", "t", "", "New team ID to associate the machine with")
+	machinesUpdateCmd.Flags().StringP("password", "p", "", "SSH password for the machine")
+	machinesUpdateCmd.Flags().StringP("key-file", "k", "", "Path to SSH private key file")
+	machinesUpdateCmd.Flags().StringP("auth-method", "a", "", "Authentication method (password, key, or both)")
+
+	// Add flags to the add-to-team command
+	machinesAddToTeamCmd.Flags().StringP("team-id", "t", "", "ID of the team to add the machine to")
+	machinesAddToTeamCmd.Flags().StringP("description", "d", "", "Description of why this machine is being added to the team")
+	machinesAddToTeamCmd.Flags().StringP("role", "r", "", "Role of the machine in the team (e.g., 'production', 'development', 'testing')")
+	machinesAddToTeamCmd.Flags().BoolP("temporary", "m", false, "Whether this is a temporary addition to the team")
+
+	if err := machinesAddToTeamCmd.MarkFlagRequired("team-id"); err != nil {
+		fmt.Println(err)
+	}
+
+	// Add flags to the remove-from-team command
+	machinesRemoveFromTeamCmd.Flags().StringP("team-id", "t", "", "ID of the team to remove the machine from")
+	if err := machinesRemoveFromTeamCmd.MarkFlagRequired("team-id"); err != nil {
+		fmt.Println(err)
+	}
 }
