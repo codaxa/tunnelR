@@ -18,6 +18,7 @@ type User struct {
 	Role      string    `json:"role" gorm:"type:varchar(20);default:readonly;check:role IN ('admin','operator','readonly')" validate:"required,oneof=admin operator readonly"`
 	CreatedAt time.Time `json:"created_at" gorm:"default:now();autoCreateTime" validate:"required"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"default:now();autoUpdateTime" validate:"required"`
+	Teams     []Team    `gorm:"many2many:user_teams;"`
 }
 
 // TableName returns the table name for the User model
