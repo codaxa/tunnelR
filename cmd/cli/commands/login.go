@@ -43,7 +43,7 @@ Example:
 The login command requires:
 - A username
 - A password`,
-	Run: func(cmd *cobra.Command, _ []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		// If server flag is not provided, try to load from config
 		if server == "" {
 			config, err := loadConfig()

@@ -59,7 +59,7 @@ Examples:
 
 This command uses the saved authentication token from previous login.`,
 
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		listChanged := cmd.Flags().Lookup("list").Changed
 		detailsChanged := cmd.Flags().Lookup("details").Changed
 		createChanged := cmd.Flags().Lookup("create").Changed
