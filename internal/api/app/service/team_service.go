@@ -133,3 +133,67 @@ func (s *TeamService) DeleteTeam(ctx context.Context, teamID string) error {
 
 	return nil
 }
+// AddUserToTeam adds a user to a team
+func (s *TeamService) AddUserToTeam(ctx context.Context, teamID, userID string) error {
+	// Check if team exists
+	team, err := s.teamRepository.GetTeamByID(ctx, teamID)
+	if err != nil {
+		return fmt.Errorf("failed to get team: %w", err)
+	}
+	if team == nil {
+		return ErrTeamNotFound
+	}
+
+	// Check if user exists
+	user, err := s.userRepository.GetUserByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+
+	// Check if user is already in team
+	inTeam, err := s.teamRepository.IsUserInTeam(ctx, userID, teamID)
+	if err != nil {
+		return fmt.Errorf("failed to check team membership: %w", err)
+	}
+	if inTeam {
+		return fmt.Errorf("user is already a member of this team")
+	}
+
+	// Add user to team
+	if err := s.teamRepository.AddUserToTeam(ctx, userID, teamID); err != nil {
+		return fmt.Errorf("failed to add user to team: %w", err)
+	}
+
+	return nil
+}
+
+// RemoveUserFromTeam removes a user from a team
+func (s *TeamService) RemoveUserFromTeam(ctx context.Context, teamID, userID string) error {
+	// Check if team exists
+	team, err := s.teamRepository.GetTeamByID(ctx, teamID)
+	if err != nil {
+		return fmt.Errorf("failed to get team: %w", err)
+	}
+	if team == nil {
+		return ErrTeamNotFound
+	}
+
+	// Check if user is in team
+	inTeam, err := s.teamRepository.IsUserInTeam(ctx, userID, teamID)
+	if err != nil {
+		return fmt.Errorf("failed to check team membership: %w", err)
+	}
+	if !inTeam {
+		return ErrUserNotInTeam
+	}
+
+	// Remove user from team
+	if err := s.teamRepository.RemoveUserFromTeam(ctx, userID, teamID); err != nil {
+		return fmt.Errorf("failed to remove user from team: %w", err)
+	}
+
+	return nil
+}

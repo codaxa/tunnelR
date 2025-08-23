@@ -87,6 +87,7 @@ The login command requires:
 			os.Exit(1)
 		}
 
+
 		apiURL := serverURL.ResolveReference(&url.URL{Path: "api/v1/login"})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
