@@ -73,7 +73,7 @@ The system supports three authentication methods:
 				fmt.Printf("Error reading key file: %s\n", err)
 				os.Exit(1)
 			}
-			payload["key_data"] = string(keyData)
+			payload["key"] = string(keyData)
 		} else if password != "" {
 			payload["auth_method"] = "password"
 			payload["password"] = password
@@ -85,7 +85,7 @@ The system supports three authentication methods:
 				fmt.Printf("Error reading key file: %s\n", err)
 				os.Exit(1)
 			}
-			payload["key_data"] = string(keyData)
+			payload["key"] = string(keyData)
 		}
 
 		// Make the request
