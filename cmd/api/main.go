@@ -42,12 +42,14 @@ func run() error {
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(dbConn)
 	teamRepo := repository.NewTeamRepository(dbConn)
+	machineRepo := repository.NewMachineRepository(dbConn)
 
 	// Initialize services
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.TokenDuration)
 	teamService := service.NewTeamService(teamRepo, userRepo)
+	machineService := service.NewMachineService(teamRepo, machineRepo)
 
-	router := apirouter.NewRouter(authService, teamService)
+	router := apirouter.NewRouter(authService, teamService, machineService)
 
 	fmt.Printf("Backend server is running on port %s\n", cfg.Port)
 

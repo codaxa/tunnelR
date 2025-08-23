@@ -59,3 +59,29 @@ func (r *UserRepository) GetUserByID(ctx context.Context, userID string) (*model
 	}
 	return &user, nil
 }
+
+// GetMachinesByUserID retrieves all machines that a user has access to through team membership
+func (r *UserRepository) GetMachinesByUserID(ctx context.Context, userID string) ([]*model.Machine, error) {
+	query := `SELECT id, hostname, ip_address::text, created_at, updated_at FROM machines WHERE ID IN (SELECT machine_id FROM machine_teams WHERE team_id IN (SELECT team_id FROM user_teams WHERE user_id = $1))`
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var machines []*model.Machine
+	for rows.Next() {
+		var machine model.Machine
+		if err := rows.Scan(&machine.ID, &machine.Hostname, &machine.IPAddress, &machine.CreatedAt, &machine.UpdatedAt); err != nil {
+			return nil, err
+		}
+		machines = append(machines, &machine)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return machines, nil
+}

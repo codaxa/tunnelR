@@ -80,6 +80,8 @@ func main() {
 		&model.User{},
 		&model.Team{},
 		&model.UserTeam{},
+		&model.Machine{},
+		&model.MachineTeam{},
 	); err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}

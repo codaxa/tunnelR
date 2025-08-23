@@ -12,4 +12,5 @@ type UserRepository interface {
 	GetUserByUsername(ctx context.Context, username string) (*model.User, error)
 	GetUserByID(ctx context.Context, userID string) (*model.User, error)
 	CreateUser(ctx context.Context, u model.User) error
+	GetMachinesByUserID(ctx context.Context, userID string) ([]*model.Machine, error)
 }

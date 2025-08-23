@@ -4,14 +4,12 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 
-	appContext "github.com/codaxa/tunnelR.git/internal/api/app/context"
 	"github.com/codaxa/tunnelR.git/internal/api/app/service"
+	"github.com/codaxa/tunnelR.git/internal/api/presentation/utils"
 	"github.com/go-chi/chi"
-	"github.com/golang-jwt/jwt"
 )
 
 // TeamHandler handles HTTP requests related to team operations
@@ -24,34 +22,6 @@ func NewTeamHandler(teamService *service.TeamService) *TeamHandler {
 	return &TeamHandler{
 		teamService: teamService,
 	}
-}
-
-// extractUserID extracts the user ID from the JWT claims in the request context
-func extractUserID(r *http.Request) (string, error) {
-	ctxValue := r.Context().Value(appContext.UserClaimsKey)
-	if ctxValue == nil {
-		return "", errors.New("no user claims in context")
-	}
-
-	var normalizedClaims map[string]interface{}
-	switch v := ctxValue.(type) {
-	case *jwt.MapClaims:
-		if v == nil {
-			return "", errors.New("nil user claims")
-		}
-		normalizedClaims = *v
-	case jwt.MapClaims:
-		normalizedClaims = v
-	default:
-		return "", fmt.Errorf("unexpected claims type: %T", ctxValue)
-	}
-
-	userID, ok := normalizedClaims["user_id"].(string)
-	if !ok {
-		return "", errors.New("user_id not found in claims or not a string")
-	}
-
-	return userID, nil
 }
 
 // CreateTeam handles the creation of a new team
@@ -71,7 +41,7 @@ func (h *TeamHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract user ID from token
-	userID, err := extractUserID(r)
+	userID, err := authutils.ExtractUserID(r)
 	if err != nil {
 		log.Printf("Error extracting user ID: %v", err)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -112,7 +82,7 @@ func (h *TeamHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 // GetTeams handles the retrieval of teams that the user is a member of
 func (h *TeamHandler) GetTeams(w http.ResponseWriter, r *http.Request) {
 	// Extract user ID from token
-	userID, err := extractUserID(r)
+	userID, err := authutils.ExtractUserID(r)
 	if err != nil {
 		log.Printf("Error extracting user ID: %v", err)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -145,7 +115,7 @@ func (h *TeamHandler) GetTeam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract user ID from token
-	userID, err := extractUserID(r)
+	userID, err := authutils.ExtractUserID(r)
 	if err != nil {
 		log.Printf("Error extracting user ID: %v", err)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -171,6 +141,33 @@ func (h *TeamHandler) GetTeam(w http.ResponseWriter, r *http.Request) {
 	// Return success response
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(team); err != nil {
+		log.Printf("Error encoding response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// GetTeamMachines handles the retrieval of machines that belong to a team
+func (h *TeamHandler) GetTeamMachines(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	if teamID == "" {
+		http.Error(w, "Team ID is required", http.StatusBadRequest)
+		return
+	}
+
+	machines, err := h.teamService.GetMachinesByTeamID(r.Context(), teamID)
+	if err != nil {
+		if errors.Is(err, service.ErrTeamNotFound) {
+			http.Error(w, "Team not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("Error getting machines: %v", err)
+		http.Error(w, "Failed to retrieve machines", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(machines); err != nil {
 		log.Printf("Error encoding response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
