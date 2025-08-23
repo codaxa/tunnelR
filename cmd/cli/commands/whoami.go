@@ -52,7 +52,6 @@ This command uses the saved authentication token from previous login.`,
 		if !strings.HasPrefix(server, "http://") && !strings.HasPrefix(server, "https://") {
 			server = "http://" + server
 		}
-
 		// Parse the server URL
 		serverURL, err := url.Parse(server)
 		if err != nil {

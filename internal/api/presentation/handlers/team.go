@@ -200,3 +200,66 @@ func (h *TeamHandler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 	// Return success response with no content
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// AddUserToTeam handles adding a user to a team
+func (h *TeamHandler) AddUserToTeam(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	if teamID == "" {
+		http.Error(w, "Team ID is required", http.StatusBadRequest)
+		return
+	}
+
+	userID := chi.URLParam(r, "userId")
+	if userID == "" {
+		http.Error(w, "User ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Add user to team
+	if err := h.teamService.AddUserToTeam(r.Context(), teamID, userID); err != nil {
+		if errors.Is(err, service.ErrTeamNotFound) {
+			http.Error(w, "Team not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("Error adding user to team: %v", err)
+		http.Error(w, "Failed to add user to team", http.StatusInternalServerError)
+		return
+	}
+
+	// Return success with no content
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// RemoveUserFromTeam handles removing a user from a team
+func (h *TeamHandler) RemoveUserFromTeam(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	if teamID == "" {
+		http.Error(w, "Team ID is required", http.StatusBadRequest)
+		return
+	}
+
+	userID := chi.URLParam(r, "userId")
+	if userID == "" {
+		http.Error(w, "User ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Remove user from team
+	if err := h.teamService.RemoveUserFromTeam(r.Context(), teamID, userID); err != nil {
+		if errors.Is(err, service.ErrTeamNotFound) {
+			http.Error(w, "Team not found", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, service.ErrUserNotInTeam) {
+			http.Error(w, "User is not a member of this team", http.StatusBadRequest)
+			return
+		}
+		log.Printf("Error removing user from team: %v", err)
+		http.Error(w, "Failed to remove user from team", http.StatusInternalServerError)
+		return
+	}
+
+	// Return success with no content
+	w.WriteHeader(http.StatusNoContent)
+}
+
