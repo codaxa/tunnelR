@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"time"
-
 	"github.com/spf13/cobra"
 )
 
