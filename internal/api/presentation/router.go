@@ -43,7 +43,10 @@ func NewRouter(authService *service.AuthService, teamService *service.TeamServic
 			r.Get("/teams/{id}", teamHandler.GetTeam)
 
 			// Add the new endpoint for adding a user to a team
-			r.Post("/teams/{id}/users", teamHandler.AddUserToTeam)
+			r.Post("/teams/{id}/users/{userId}", teamHandler.AddUserToTeam)
+
+			// Add the new endpoint for removing a user from a team
+			r.Delete("/teams/{id}/users/{userId}", teamHandler.RemoveUserFromTeam)
 		})
 	})
 

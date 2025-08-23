@@ -160,3 +160,31 @@ func (s *TeamService) AddUserToTeam(ctx context.Context, teamID, userID string) 
 
 	return nil
 }
+
+// RemoveUserFromTeam removes a user from a team
+func (s *TeamService) RemoveUserFromTeam(ctx context.Context, teamID, userID string) error {
+	// Check if team exists
+	team, err := s.teamRepository.GetTeamByID(ctx, teamID)
+	if err != nil {
+		return fmt.Errorf("failed to get team: %w", err)
+	}
+	if team == nil {
+		return ErrTeamNotFound
+	}
+
+	// Check if user is in team
+	inTeam, err := s.teamRepository.IsUserInTeam(ctx, userID, teamID)
+	if err != nil {
+		return fmt.Errorf("failed to check team membership: %w", err)
+	}
+	if !inTeam {
+		return ErrUserNotInTeam
+	}
+
+	// Remove user from team
+	if err := s.teamRepository.RemoveUserFromTeam(ctx, userID, teamID); err != nil {
+		return fmt.Errorf("failed to remove user from team: %w", err)
+	}
+
+	return nil
+}
