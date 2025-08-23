@@ -74,6 +74,7 @@ The system supports three authentication methods:
 				os.Exit(1)
 			}
 			payload["key"] = string(keyData)
+
 		} else if password != "" {
 			payload["auth_method"] = "password"
 			payload["password"] = password
