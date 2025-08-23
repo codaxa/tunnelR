@@ -45,3 +45,17 @@ func (r *UserRepository) CreateUser(ctx context.Context, u model.User) error {
 	}
 	return nil
 }
+
+// GetUserByID retrieves a user from the database by their ID
+func (r *UserRepository) GetUserByID(ctx context.Context, userID string) (*model.User, error) {
+	query := `SELECT id, username, password, role FROM users WHERE id = $1`
+	row := r.db.QueryRow(ctx, query, userID)
+	var user model.User
+	if err := row.Scan(&user.ID, &user.Username, &user.Password, &user.Role); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &user, nil
+}

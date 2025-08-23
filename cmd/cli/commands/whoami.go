@@ -1,13 +1,15 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/spf13/cobra"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
-
-	"github.com/spf13/cobra"
+	"time"
 )
 
 type whoamiResponse struct {
@@ -45,9 +47,27 @@ This command uses the saved authentication token from previous login.`,
 			os.Exit(1)
 		}
 
-		// Create HTTP request
-		url := fmt.Sprintf("http://%s/api/whoami", server)
-		req, err := http.NewRequest("GET", url, nil)
+		// Parse the server URL
+		serverURL, err := url.Parse(server)
+		if err != nil {
+			fmt.Println("Error parsing server URL:", err)
+			os.Exit(1)
+		}
+
+		// Ensure the scheme is set
+		if serverURL.Scheme == "" {
+			serverURL.Scheme = "http"
+		}
+
+		// Construct the API endpoint URL properly
+		apiURL := serverURL.ResolveReference(&url.URL{Path: "api/whoami"})
+
+		// Create a context with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// Create HTTP request with context
+		req, err := http.NewRequestWithContext(ctx, "GET", apiURL.String(), nil)
 		if err != nil {
 			fmt.Println("Error creating request:", err)
 			os.Exit(1)
@@ -56,8 +76,10 @@ This command uses the saved authentication token from previous login.`,
 		// Add auth token to header
 		req.Header.Set("Authorization", "Bearer "+config.Token)
 
-		// Make the request
-		client := &http.Client{}
+		// Make the request with a timeout
+		client := &http.Client{
+			Timeout: 30 * time.Second,
+		}
 		resp, err := client.Do(req)
 		if err != nil {
 			fmt.Println("Error sending request:", err)

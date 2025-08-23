@@ -68,7 +68,7 @@ The login command requires:
 		}
 
 		// Make POST request
-		url := fmt.Sprintf("http://%s/api/login", server)
+		url := fmt.Sprintf("http://%s/api/v1/login", server)
 		resp, err := http.Post(url, "application/json", bytes.NewBuffer(bodyBytes))
 		if err != nil {
 			fmt.Println("Error sending request:", err)

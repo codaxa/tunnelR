@@ -10,5 +10,6 @@ import (
 // UserRepository defines operations for managing users in the data store
 type UserRepository interface {
 	GetUserByUsername(ctx context.Context, username string) (*model.User, error)
+	GetUserByID(ctx context.Context, userID string) (*model.User, error)
 	CreateUser(ctx context.Context, u model.User) error
 }
