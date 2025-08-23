@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url" // Add URL package import
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -219,7 +220,7 @@ func machineRemoveFunction(_ *cobra.Command, args []string) {
 	machineID := args[0]
 
 	// Make the request
-	resp, err := makeAuthenticatedRequest("DELETE", fmt.Sprintf("/api/v1/machines/%s", machineID), nil)
+	resp, err := makeAuthenticatedRequest("DELETE", fmt.Sprintf("/api/v1/machines/%s", url.PathEscape(machineID)), nil)
 	if err != nil {
 		if strings.Contains(err.Error(), "no authentication token found") {
 			fmt.Println("Please log in first using the login command")
@@ -256,8 +257,9 @@ func machineRemoveFunction(_ *cobra.Command, args []string) {
 
 // machinesRmCmd represents the rm command
 var machinesRmCmd = &cobra.Command{
-	Use:   "rm [machine-id]",
-	Short: "Remove a machine from the system",
+	Use:     "rm [machine-id]",
+	Aliases: []string{"delete"}, // Add delete as an alias
+	Short:   "Remove a machine from the system",
 	Long: `Permanently remove a machine from the system by its unique identifier.
 This operation cannot be undone and will remove all associations with teams.
 
@@ -265,7 +267,10 @@ Arguments:
   machine-id    The unique identifier of the machine to remove
 
 This command requires administrative privileges or ownership of the machine.
-Use with caution as all access configurations for this machine will be deleted.`,
+Use with caution as all access configurations for this machine will be deleted.
+
+Aliases:
+  rm, delete    Both names perform the same operation.`,
 	Args: cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
 	Run:  machineRemoveFunction,
 }
@@ -587,7 +592,7 @@ for a single machine record.`,
 		machineID := args[0]
 
 		// Make the request
-		resp, err := makeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/id/%s", machineID), nil)
+		resp, err := makeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/id/%s", url.PathEscape(machineID)), nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -624,7 +629,7 @@ If multiple machines share the same IP (unusual), only the first match is return
 		ipAddress := args[0]
 
 		// Make the request
-		resp, err := makeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/ip/%s", ipAddress), nil)
+		resp, err := makeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/ip/%s", url.PathEscape(ipAddress)), nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -641,23 +646,6 @@ If multiple machines share the same IP (unusual), only the first match is return
 
 		displayMachineDetails(resp, "IP address")
 	},
-}
-
-// machinesDeleteCmd represents the delete command (alias for rm)
-var machinesDeleteCmd = &cobra.Command{
-	Use:   "delete [machine-id]",
-	Short: "Delete a machine (alias for rm)",
-	Long: `Permanently delete a machine from the system by its unique identifier.
-This is an alias for the 'rm' command providing identical functionality.
-
-Arguments:
-  machine-id    The unique identifier of the machine to delete
-
-This operation permanently removes the machine and cannot be undone.
-All associations with teams and access configurations will be removed.
-Use with caution when deleting production machines.`,
-	Args: cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
-	Run:  machineRemoveFunction,
 }
 
 // makeAuthenticatedRequest makes an HTTP request with authentication
@@ -713,7 +701,6 @@ func init() {
 	machinesCmd.AddCommand(machinesRemoveFromTeamCmd)
 	machinesCmd.AddCommand(machinesGetCmd)     // Add the new get command
 	machinesCmd.AddCommand(machinesGetByIPCmd) // Add the new get-by-ip command
-	machinesCmd.AddCommand(machinesDeleteCmd)  // Add the new delete command (alias for rm)
 
 	// Add flags to the add command
 	machinesAddCmd.Flags().StringP("hostname", "n", "", "Hostname of the machine")
