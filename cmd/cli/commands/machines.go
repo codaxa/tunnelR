@@ -106,7 +106,7 @@ The system supports three authentication methods:
 				fmt.Println("Error parsing response:", err)
 				os.Exit(1)
 			}
-			fmt.Printf("Machine added successfully. ID: %s\n", result["id"])
+			fmt.Printf("Machine added successfully. ID: %s\n", result["machine_id"])
 		case http.StatusUnauthorized:
 			fmt.Println("Unauthorized. Please log in again.")
 			os.Exit(1)
@@ -366,11 +366,6 @@ Arguments:
 Required flags:
   --team-id, -t    ID of the team to add the machine to
 
-Optional flags:
-  --description, -d    Explain why this machine is being added to the team
-  --role, -r           Specify machine's role (e.g., 'production', 'development')
-  --temporary, -m      Mark as a temporary addition (defaults to false)
-
 This operation requires appropriate permissions for both the machine and the team.
 Team members will gain access according to team permission policies.`,
 	Args: cobra.ExactArgs(1), // Require exactly one argument (the machine ID)
@@ -407,7 +402,7 @@ Team members will gain access according to team permission policies.`,
 
 		// Handle response
 		switch resp.StatusCode {
-		case http.StatusOK, http.StatusCreated:
+		case http.StatusNoContent:
 			fmt.Println("Machine successfully added to team.")
 		case http.StatusUnauthorized:
 			fmt.Println("Unauthorized. Please log in again.")
@@ -770,9 +765,6 @@ func init() {
 
 	// Add flags to the add-to-team command
 	machinesAddToTeamCmd.Flags().StringP("team-id", "t", "", "ID of the team to add the machine to")
-	machinesAddToTeamCmd.Flags().StringP("description", "d", "", "Description of why this machine is being added to the team")
-	machinesAddToTeamCmd.Flags().StringP("role", "r", "", "Role of the machine in the team (e.g., 'production', 'development', 'testing')")
-	machinesAddToTeamCmd.Flags().BoolP("temporary", "m", false, "Whether this is a temporary addition to the team")
 
 	if err := machinesAddToTeamCmd.MarkFlagRequired("team-id"); err != nil {
 		fmt.Println(err)
