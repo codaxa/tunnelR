@@ -9,7 +9,8 @@ type Team struct {
 	Name      string    `json:"name" gorm:"type:varchar(100);not null;uniqueIndex" validate:"required,min=3,max=100"`
 	CreatedAt time.Time `json:"created_at" gorm:"default:now();autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"default:now();autoUpdateTime"`
-	Users     []User    `gorm:"many2many:user_teams;"`
+	Users     []User    `json:"users,omitempty" gorm:"many2many:user_teams;"`
+
 }
 
 // TableName returns the table name for the Team model

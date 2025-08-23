@@ -262,3 +262,4 @@ func (h *TeamHandler) RemoveUserFromTeam(w http.ResponseWriter, r *http.Request)
 	// Return success with no content
 	w.WriteHeader(http.StatusNoContent)
 }
+

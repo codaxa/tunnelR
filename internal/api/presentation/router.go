@@ -37,16 +37,12 @@ func NewRouter(authService *service.AuthService, teamService *service.TeamServic
 		r.Group(func(r chi.Router) {
 			r.Use(authMiddleware.AdminAuthenticate)
 			r.Post("/register", userHandler.Register)
-
 			r.Post("/teams", teamHandler.CreateTeam)
 			r.Delete("/teams/{id}", teamHandler.DeleteTeam)
 			r.Get("/teams/{id}", teamHandler.GetTeam)
-
-			// Add the new endpoint for adding a user to a team
 			r.Post("/teams/{id}/users/{userId}", teamHandler.AddUserToTeam)
-
-			// Add the new endpoint for removing a user from a team
 			r.Delete("/teams/{id}/users/{userId}", teamHandler.RemoveUserFromTeam)
+
 		})
 	})
 

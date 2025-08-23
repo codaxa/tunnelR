@@ -123,7 +123,6 @@ func (s *TeamService) DeleteTeam(ctx context.Context, teamID string) error {
 
 	return nil
 }
-
 // AddUserToTeam adds a user to a team
 func (s *TeamService) AddUserToTeam(ctx context.Context, teamID, userID string) error {
 	// Check if team exists
