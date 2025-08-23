@@ -58,7 +58,7 @@ func (am *AuthMiddleware) AdminAuthenticate(next http.Handler) http.Handler {
 			return
 		}
 
-		role := ExtractUserRole(claims)
+		role := extractUserRole(claims)
 		if role != model.RoleAdmin {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
@@ -69,9 +69,8 @@ func (am *AuthMiddleware) AdminAuthenticate(next http.Handler) http.Handler {
 	})
 }
 
-// ExtractUserRole extracts the user role from the JWT claims in the request context.
-// Exported so it can be used by other packages
-func ExtractUserRole(claims *jwt.MapClaims) (role string) {
+// extractUserRole extracts the user role from the JWT claims in the request context.
+func extractUserRole(claims *jwt.MapClaims) (role string) {
 	if claims == nil {
 		return ""
 	}
