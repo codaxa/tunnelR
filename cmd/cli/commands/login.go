@@ -2,14 +2,24 @@ package commands
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
+)
+
+var (
+	username string
+	password string
+	server   string
 )
 
 type loginRequest struct {
@@ -33,11 +43,7 @@ Example:
 The login command requires:
 - A username
 - A password`,
-	Run: func(cmd *cobra.Command, _ []string) {
-		user, _ := cmd.Flags().GetString("user")
-		password, _ := cmd.Flags().GetString("password")
-		server, _ := cmd.Flags().GetString("server")
-
+	Run: func(_ *cobra.Command, _ []string) {
 		// If server flag is not provided, try to load from config
 		if server == "" {
 			config, err := loadConfig()
@@ -56,9 +62,23 @@ The login command requires:
 			fmt.Printf("Using server from config: %s\n", server)
 		}
 
+		if !strings.HasPrefix(server, "http://") && !strings.HasPrefix(server, "https://") {
+			server = "http://" + server
+		}
+
+		serverURL, err := url.Parse(server)
+		if err != nil {
+			fmt.Println("Error parsing server URL:", err)
+			os.Exit(1)
+		}
+
+		if serverURL.Scheme == "" {
+			serverURL.Scheme = "http"
+		}
+
 		// Prepare request body
 		reqBody := loginRequest{
-			Username: user,
+			Username: username,
 			Password: password,
 		}
 		bodyBytes, err := json.Marshal(reqBody)
@@ -67,9 +87,24 @@ The login command requires:
 			os.Exit(1)
 		}
 
-		// Make POST request
-		url := fmt.Sprintf("http://%s/api/v1/login", server)
-		resp, err := http.Post(url, "application/json", bytes.NewBuffer(bodyBytes))
+		apiURL := serverURL.ResolveReference(&url.URL{Path: "api/v1/login"})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		req, err := http.NewRequestWithContext(ctx, "POST", apiURL.String(), bytes.NewBuffer(bodyBytes))
+		if err != nil {
+			fmt.Println("Error creating request:", err)
+			os.Exit(1)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{
+			Timeout: 30 * time.Second,
+		}
+
+		resp, err := client.Do(req)
 		if err != nil {
 			fmt.Println("Error sending request:", err)
 			os.Exit(1)
@@ -136,18 +171,16 @@ The login command requires:
 			os.Exit(1)
 		}
 
-		// In production, don't print the password (security risk)
-		fmt.Printf("Logging in as %s...\n", user)
-		// Here you would add your actual authentication logic
+		fmt.Printf("Logging in as %s...\n", username)
 	},
 }
 
 func init() {
 	RootCmd.AddCommand(loginCmd)
 
-	loginCmd.Flags().StringP("user", "u", "", "Username for authentication")
-	loginCmd.Flags().StringP("password", "p", "", "Password for authentication")
-	loginCmd.Flags().StringP("server", "s", "", "Address or hostname of the backend server")
+	loginCmd.Flags().StringVarP(&username, "user", "u", "", "Username for authentication")
+	loginCmd.Flags().StringVarP(&password, "password", "p", "", "Password for authentication")
+	loginCmd.Flags().StringVarP(&server, "server", "s", "", "Address or hostname of the backend server")
 
 	if err := loginCmd.MarkFlagRequired("user"); err != nil {
 		fmt.Println(err)
