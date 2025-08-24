@@ -23,7 +23,7 @@ type Machine struct {
 	IPAddress  string    `json:"ip_address" gorm:"type:inet;uniqueIndex;not null"`
 	AuthMethod string    `json:"auth_method" gorm:"type:varchar(20);default:readonly;check:auth_method IN ('password','key','both')" validate:"required,oneof=password key both"`
 	Password   string    `gorm:"type:varchar(100)"`
-	Key        string    `gorm:"type:varchar(100)"`
+	Key        string    `gorm:"type:text"`
 	CreatedAt  time.Time `json:"created_at" gorm:"default:now();autoCreateTime"`
 	UpdatedAt  time.Time `json:"updated_at" gorm:"default:now();autoUpdateTime"`
 }
