@@ -7,6 +7,7 @@ import (
 // SessionStatus represents the status of a shell session
 type SessionStatus string
 
+// StatusProvisioned represents the session status when it has been successfully provisioned but is not yet active.
 const (
 	StatusProvisioned SessionStatus = "provisioned"
 	StatusActive      SessionStatus = "active"

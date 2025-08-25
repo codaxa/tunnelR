@@ -37,7 +37,7 @@ func NewRouter(authService *service.AuthService, teamService *service.TeamServic
 			log.Println("WS-TEST: Connection attempt started")
 
 			upgrader := websocket.Upgrader{
-				CheckOrigin: func(r *http.Request) bool { return true },
+				CheckOrigin: func(_ *http.Request) bool { return true },
 			}
 
 			conn, err := upgrader.Upgrade(w, r, nil)
@@ -45,10 +45,16 @@ func NewRouter(authService *service.AuthService, teamService *service.TeamServic
 				log.Printf("WS-TEST: Upgrade failed: %v", err)
 				return
 			}
-			defer conn.Close()
+			defer func() {
+				if err := conn.Close(); err != nil {
+					log.Printf("WS-TEST: Connection close failed: %v", err)
+				}
+			}()
 
 			log.Println("WS-TEST: Connection established")
-			conn.WriteMessage(websocket.TextMessage, []byte("Test WebSocket connected"))
+			if err := conn.WriteMessage(websocket.TextMessage, []byte("Test WebSocket connected")); err != nil {
+				log.Printf("WS-TEST: WriteMessage failed: %v", err)
+			}
 		})
 
 		// Authenticated user routes

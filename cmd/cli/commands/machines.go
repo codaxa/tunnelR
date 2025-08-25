@@ -179,16 +179,22 @@ This command requires authentication and will only show machines you have permis
 			w := tabwriter.NewWriter(os.Stdout, 2, 0, 3, ' ', 0)
 
 			// Print headers with consistent spacing
-			fmt.Fprintln(w, "  ID\tHOSTNAME\tIP ADDRESS\tCREATED AT")
-			fmt.Fprintln(w, "  ───────────────────────\t────────\t───────────\t──────────")
+			if _, err := fmt.Fprintln(w, "  ID\tHOSTNAME\tIP ADDRESS\tCREATED AT"); err != nil {
+				log.Printf("Error writing header: %v", err)
+			}
+			if _, err := fmt.Fprintln(w, "  ───────────────────────\t────────\t───────────\t──────────"); err != nil {
+				log.Printf("Error writing header underline: %v", err)
+			}
 
 			// Print data rows
 			for _, m := range machines {
-				fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n",
+				if _, err := fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n",
 					m.ID,
 					m.Hostname,
 					m.IPAddress,
-					m.CreatedAt.Format("Jan 02, 2006 15:04"))
+					m.CreatedAt.Format("Jan 02, 2006 15:04")); err != nil {
+					log.Printf("Error writing machine row: %v", err)
+				}
 			}
 
 			// Flush the tabwriter
