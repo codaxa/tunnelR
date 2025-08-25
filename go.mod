@@ -32,5 +32,6 @@ require (
 require (
 	github.com/go-playground/validator/v10 v10.27.0
 	github.com/golang-jwt/jwt v3.2.2+incompatible
+	github.com/gorilla/websocket v1.5.3
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 )

@@ -143,7 +143,7 @@ Results are formatted in a tabular layout for easy reading.
 This command requires authentication and will only show machines you have permission to view.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		// Make the request
-		resp, err := makeAuthenticatedRequest("GET", "/api/v1/machines", nil)
+		resp, err := makeAuthenticatedRequest("GET", "/api/v1/user/machines", nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -164,7 +164,7 @@ This command requires authentication and will only show machines you have permis
 			var machines []struct {
 				ID        string    `json:"id"`
 				Hostname  string    `json:"hostname"`
-				IP        string    `json:"ip"`
+				IPAddress string    `json:"ip_address"` // Changed from IP to IPAddress to match API response
 				CreatedAt time.Time `json:"created_at"`
 			}
 			if err := json.NewDecoder(resp.Body).Decode(&machines); err != nil {
@@ -172,36 +172,31 @@ This command requires authentication and will only show machines you have permis
 				os.Exit(1)
 			}
 
-			// Format output as a table
-			// Create a styled table with better spacing
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', tabwriter.TabIndent)
+			// Print header
+			fmt.Println("\n┌─────────────────────────────────────────── MACHINES ───────────────────────────────────────────┐")
 
-			// Print styled header
-			fmt.Println("\n┌─────────────────────── MACHINES ───────────────────────┐")
-			if _, err := fmt.Fprintln(w, "\033[1mID\tHOSTNAME\tIP ADDRESS\tCREATED AT\033[0m"); err != nil {
-				log.Printf("Error writing to tabwriter: %v", err)
-			}
+			// Create a properly configured tabwriter with larger minwidth and explicit padding
+			w := tabwriter.NewWriter(os.Stdout, 2, 0, 3, ' ', 0)
 
-			// Print separator
-			if _, err := fmt.Fprintln(w, "────────\t────────\t─────────\t───────\t──────────"); err != nil {
-				log.Printf("Error writing to tabwriter: %v", err)
-			}
+			// Print headers with consistent spacing
+			fmt.Fprintln(w, "  ID\tHOSTNAME\tIP ADDRESS\tCREATED AT")
+			fmt.Fprintln(w, "  ───────────────────────\t────────\t───────────\t──────────")
 
 			// Print data rows
 			for _, m := range machines {
-				if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+				fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n",
 					m.ID,
 					m.Hostname,
-					m.IP,
-					m.CreatedAt.Format("Jan 02, 2006 15:04")); err != nil {
-					log.Printf("Error writing to tabwriter: %v", err)
-				}
+					m.IPAddress,
+					m.CreatedAt.Format("Jan 02, 2006 15:04"))
 			}
-			fmt.Println("└──────────────────────────────────────────────────────────┘")
+
+			// Flush the tabwriter
 			if err := w.Flush(); err != nil {
 				log.Printf("Error flushing tabwriter: %v", err)
 			}
 
+			fmt.Println("└────────────────────────────────────────────────────────────────────────────────────────────────┘")
 			fmt.Printf("\nTotal: %d machines\n", len(machines))
 		case http.StatusUnauthorized:
 			fmt.Println("Unauthorized. Please log in again.")
