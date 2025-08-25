@@ -72,10 +72,15 @@ func (r *AccessLogRepository) UpdateAccessLogExpiry(ctx context.Context, accessL
 
 // UpdateAccessLogStatus updates the status of an access log
 func (r *AccessLogRepository) UpdateAccessLogStatus(ctx context.Context, machineID, tempUsername string, status model.SessionStatus) error {
+	// PostgreSQL doesn't support ORDER BY LIMIT in UPDATE statements directly
+	// Use a subquery approach instead
 	query := `UPDATE access_logs 
               SET session_status = $1, updated_at = NOW() 
-              WHERE machine_id = $2 AND temp_username = $3 AND expires_at > NOW()
-              ORDER BY created_at DESC LIMIT 1`
+              WHERE id = (
+                SELECT id FROM access_logs
+                WHERE machine_id = $2 AND temp_username = $3 AND expires_at > NOW()
+                ORDER BY created_at DESC LIMIT 1
+              )`
 
 	_, err := r.db.Exec(ctx, query, status, machineID, tempUsername)
 	if err != nil {

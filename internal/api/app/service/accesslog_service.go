@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/codaxa/tunnelR.git/internal/api/core/model"
@@ -22,7 +23,22 @@ func NewAccessLogService(accessLogRepo repository.AccessLogRepository) *AccessLo
 
 // CreateAccessLog creates a new access log entry
 func (s *AccessLogService) CreateAccessLog(ctx context.Context, accessLog model.AccessLog) error {
-	return s.accessLogRepository.CreateAccessLog(ctx, accessLog)
+	// Add context timeout check
+	if ctx.Err() != nil {
+		return fmt.Errorf("context error before creating access log: %w", ctx.Err())
+	}
+
+	// Use context with database operation
+	err := s.accessLogRepository.CreateAccessLog(ctx, accessLog)
+	if err != nil {
+		if ctx.Err() != nil {
+			// If context was canceled during operation, log it
+			return fmt.Errorf("failed to create access log: %w", ctx.Err())
+		}
+		return fmt.Errorf("failed to create access log: %w", err)
+	}
+
+	return nil
 }
 
 // GetActiveAccessLog retrieves an active access log for a machine and temporary username

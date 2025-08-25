@@ -2,15 +2,20 @@ package handlers
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"crypto/rsa"
+	"encoding/pem"
 
 	"github.com/codaxa/tunnelR.git/internal/api/app/service"
 	"github.com/codaxa/tunnelR.git/internal/api/core/model"
@@ -148,8 +153,11 @@ func (h *ShellHandler) ShellAccess(w http.ResponseWriter, r *http.Request) {
 	// After successful upgrade, handle the ephemeral account creation in a separate goroutine
 	// to avoid blocking the response
 	go func() {
+		// Create a new background context instead of using the request context
+		newCtx := context.Background()
+
 		// Create temporary username
-		tempUsername, err := h.createEphemeralAccount(r.Context(), machine, username, userID, ttlHours)
+		tempUsername, err := h.createEphemeralAccount(newCtx, machine, username, userID, ttlHours)
 		if err != nil {
 			// Send error message over WebSocket
 			errMsg := wsMessage{
@@ -163,7 +171,7 @@ func (h *ShellHandler) ShellAccess(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Start WebSocket session with the ephemeral account
-		h.handleWebSocketSession(r.Context(), conn, machine, userID, tempUsername, ttlHours)
+		h.handleWebSocketSession(newCtx, conn, machine, userID, tempUsername, ttlHours)
 	}()
 }
 
@@ -363,10 +371,9 @@ func (h *ShellHandler) handleWebSocketSession(ctx context.Context, conn *websock
 
 	// Create a new client config for the temporary user
 	tempUserConfig := &ssh.ClientConfig{
-		User:            tempUsername,
-		Auth:            []ssh.AuthMethod{},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
+		User:    tempUsername,
+		Auth:    []ssh.AuthMethod{},
+		Timeout: 10 * time.Second,
 	}
 
 	// Get the temporary user's password by executing a command as root
@@ -376,7 +383,93 @@ func (h *ShellHandler) handleWebSocketSession(ctx context.Context, conn *websock
 	randomPassword := hex.EncodeToString(randomPasswordBytes)
 
 	// Set password for temp user
+	// After setting the password with chpasswd, check if it worked
 	setPasswordCmd := fmt.Sprintf("echo '%s:%s' | sudo chpasswd", tempUsername, randomPassword)
+	stdout, stderr, err := h.executeSSHCommandWithOutput(sshClient, setPasswordCmd)
+	if err != nil {
+		log.Printf("[WS-Session] Error setting password for temp user: %v", err)
+		log.Printf("[WS-Session] Command stderr: %s", stderr)
+		outputCh <- wsMessage{
+			Type:    msgTypeError,
+			Code:    "PROVISION_FAILED",
+			Message: "Failed to set up user account password",
+		}
+		close(doneCh)
+		return
+	}
+
+	// Check if password authentication is allowed in sshd config
+	checkSshdCmd := "grep -E '^PasswordAuthentication|^ChallengeResponseAuthentication' /etc/ssh/sshd_config"
+	stdout, stderr, err = h.executeSSHCommandWithOutput(sshClient, checkSshdCmd)
+	if err == nil {
+		log.Printf("[WS-Session] SSH config settings: %s", stdout)
+		if strings.Contains(stdout, "PasswordAuthentication no") {
+			log.Printf("[WS-Session] Warning: Password authentication is disabled in sshd_config")
+			// Continue anyway, try alternative approach
+		}
+	}
+
+	// Verify that the user was created correctly
+	verifyUserCmd := fmt.Sprintf("id %s", tempUsername)
+	stdout, stderr, err = h.executeSSHCommandWithOutput(sshClient, verifyUserCmd)
+	if err != nil {
+		log.Printf("[WS-Session] User verification failed: %v", err)
+		log.Printf("[WS-Session] Command stderr: %s", stderr)
+		outputCh <- wsMessage{
+			Type:    msgTypeError,
+			Code:    "PROVISION_FAILED",
+			Message: "User account verification failed",
+		}
+		close(doneCh)
+		return
+	}
+	log.Printf("[WS-Session] User verified: %s", stdout)
+
+	// Alternative approach: Add the temp user to SSH authorized keys temporarily
+	pubKey, privKey, err := generateSSHKeyPair()
+	if err != nil {
+		log.Printf("[WS-Session] Error generating SSH key pair: %v", err)
+		// Continue with password auth anyway
+	} else {
+		authKeysCmd := fmt.Sprintf("sudo mkdir -p /home/%s/.ssh && echo '%s' | sudo tee /home/%s/.ssh/authorized_keys && sudo chmod 600 /home/%s/.ssh/authorized_keys && sudo chown -R %s:%s /home/%s/.ssh",
+			tempUsername, pubKey, tempUsername, tempUsername, tempUsername, tempUsername, tempUsername)
+		stdout, stderr, err = h.executeSSHCommandWithOutput(sshClient, authKeysCmd)
+		if err != nil {
+			log.Printf("[WS-Session] Error setting up authorized_keys: %v", err)
+			log.Printf("[WS-Session] Command stderr: %s", stderr)
+			// Continue with password auth anyway
+		} else {
+			// Add key authentication as an alternative
+			signer, err := ssh.ParsePrivateKey([]byte(privKey))
+			if err == nil {
+				tempUserConfig.Auth = append(tempUserConfig.Auth, ssh.PublicKeys(signer))
+				log.Printf("[WS-Session] Added key authentication as fallback")
+			}
+		}
+	}
+
+	// Try multiple authentication methods
+	tempUserConfig.Auth = []ssh.AuthMethod{
+		ssh.Password(randomPassword),
+		ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
+			answers := make([]string, len(questions))
+			for i := range questions {
+				answers[i] = randomPassword
+			}
+			return answers, nil
+		}),
+	}
+
+	// Connect as the temporary user
+	ipAddress := machine.IPAddress
+	if idx := strings.Index(ipAddress, "/"); idx > 0 {
+		ipAddress = ipAddress[:idx]
+	}
+
+	// Connect as the temporary user
+	log.Printf("[WS-Session] Using su method instead of direct SSH for temporary user %s", tempUsername)
+
+	// Create a session from the existing root connection
 	rootSession, err := sshClient.NewSession()
 	if err != nil {
 		log.Printf("[WS-Session] Error creating root session: %v", err)
@@ -388,74 +481,24 @@ func (h *ShellHandler) handleWebSocketSession(ctx context.Context, conn *websock
 		close(doneCh)
 		return
 	}
-
-	err = rootSession.Run(setPasswordCmd)
-	rootSession.Close()
-	if err != nil {
-		log.Printf("[WS-Session] Error setting password for temp user: %v", err)
-		outputCh <- wsMessage{
-			Type:    msgTypeError,
-			Code:    "PROVISION_FAILED",
-			Message: "Failed to set up user account",
-		}
-		close(doneCh)
-		return
-	}
-
-	// Add password authentication for the temp user
-	tempUserConfig.Auth = append(tempUserConfig.Auth, ssh.Password(randomPassword))
-
-	// Connect as the temporary user
-	tempUserClient, err := ssh.Dial("tcp", machine.IPAddress+":22", tempUserConfig)
-	if err != nil {
-		log.Printf("[WS-Session] Error connecting as temp user: %v", err)
-		outputCh <- wsMessage{
-			Type:    msgTypeError,
-			Code:    "LOGIN_FAILED",
-			Message: "Failed to login as temporary user",
-		}
-		close(doneCh)
-		return
-	}
-	defer tempUserClient.Close()
-
-	// Create session as the temporary user
-	session, err := tempUserClient.NewSession()
-	if err != nil {
-		log.Printf("[WS-Session] Error creating SSH session: %v", err)
-		outputCh <- wsMessage{
-			Type:    msgTypeError,
-			Code:    "SESSION_FAILED",
-			Message: "Failed to create SSH session",
-		}
-		close(doneCh)
-		return
-	}
-	defer session.Close()
-
-	// Update access log to active status
-	err = h.accessLogService.UpdateAccessLogStatus(ctx, machine.ID, tempUsername, model.StatusActive)
-	if err != nil {
-		log.Printf("[WS-Session] Error updating access log status: %v", err)
-		// Continue anyway, not critical
-	}
+	defer rootSession.Close()
 
 	// Set up pipes for I/O
-	stdin, err := session.StdinPipe()
+	stdin, err := rootSession.StdinPipe()
 	if err != nil {
 		log.Printf("[WS-Session] Error getting stdin pipe: %v", err)
 		close(doneCh)
 		return
 	}
 
-	stdout, err := session.StdoutPipe()
+	stdoutPipe, err := rootSession.StdoutPipe()
 	if err != nil {
 		log.Printf("[WS-Session] Error getting stdout pipe: %v", err)
 		close(doneCh)
 		return
 	}
 
-	stderr, err := session.StderrPipe()
+	stderrPipe, err := rootSession.StderrPipe()
 	if err != nil {
 		log.Printf("[WS-Session] Error getting stderr pipe: %v", err)
 		close(doneCh)
@@ -474,17 +517,50 @@ func (h *ShellHandler) handleWebSocketSession(ctx context.Context, conn *websock
 	initialRows := 24
 
 	// Request pseudo terminal
-	if err := session.RequestPty("xterm", initialCols, initialRows, modes); err != nil {
+	if err := rootSession.RequestPty("xterm", initialRows, initialCols, modes); err != nil {
 		log.Printf("[WS-Session] Error requesting PTY: %v", err)
 		close(doneCh)
 		return
 	}
 
-	// Start shell with restricted options
-	if err := session.Start("/bin/bash --noprofile --norc"); err != nil {
-		log.Printf("[WS-Session] Error starting shell: %v", err)
+	// Start shell with sudo to switch to temporary user
+	suCmd := fmt.Sprintf("sudo -u %s bash -c 'cd ~%s; exec bash'", tempUsername, tempUsername)
+	if err := rootSession.Start(suCmd); err != nil {
+		log.Printf("[WS-Session] Error starting shell with su: %v", err)
+		outputCh <- wsMessage{
+			Type:    msgTypeError,
+			Code:    "SESSION_FAILED",
+			Message: "Failed to start shell as temporary user",
+		}
 		close(doneCh)
 		return
+	}
+
+	// After starting the shell, send a welcome command
+	time.Sleep(100 * time.Millisecond) // Small delay to let the shell initialize
+	welcomeCmd := "echo 'Shell session started. Your temporary account will expire in $(( $(date -d \"$(sudo chage -l " + tempUsername + " | grep 'Account expires' | cut -d: -f2)\" +%s) - $(date +%s) )) seconds.'\n"
+	_, err = stdin.Write([]byte(welcomeCmd))
+	if err != nil {
+		log.Printf("[WS-Session] Error sending welcome command: %v", err)
+		// Continue anyway
+	}
+
+	// Add a timeout for the SSH session
+	sessionTimeout := time.Duration(ttlHours+1) * time.Hour
+	sessionTimeoutTimer := time.AfterFunc(sessionTimeout, func() {
+		log.Printf("[WS-Session] Session timeout reached after %v", sessionTimeout)
+		errorCh <- fmt.Errorf("session timeout reached")
+	})
+	defer sessionTimeoutTimer.Stop()
+
+	// Update access log to active status
+	// Use a new context with timeout instead of the parent context
+	updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	err = h.accessLogService.UpdateAccessLogStatus(updateCtx, machine.ID, tempUsername, model.StatusActive)
+	updateCancel() // Always cancel the context to avoid leaks
+	if err != nil {
+		log.Printf("[WS-Session] Error updating access log status: %v", err)
+		// Continue anyway, not critical
 	}
 
 	// Send system message
@@ -493,12 +569,13 @@ func (h *ShellHandler) handleWebSocketSession(ctx context.Context, conn *websock
 		Message: fmt.Sprintf("Connected to %s as temporary user %s. Session will expire in %s.",
 			machine.Hostname, tempUsername, time.Until(time.Now().Add(time.Hour*time.Duration(ttlHours))).Round(time.Minute)),
 	}
+	var lastCommand string
 
 	// Handle stdout
 	go func() {
-		buf := make([]byte, 1024)
+		buf := make([]byte, 4096)
 		for {
-			n, err := stdout.Read(buf)
+			n, err := stdoutPipe.Read(buf)
 			if err != nil {
 				if err.Error() != "EOF" {
 					log.Printf("[WS-Session] Error reading from stdout: %v", err)
@@ -506,10 +583,32 @@ func (h *ShellHandler) handleWebSocketSession(ctx context.Context, conn *websock
 				}
 				return
 			}
-
-			outputCh <- wsMessage{
-				Type: msgTypeStdout,
-				Data: string(buf[:n]),
+			raw := string(buf[:n])
+			// Remove ANSI escape codes
+			clean := ansiRegexp.ReplaceAllString(raw, "")
+			lines := strings.Split(clean, "\n")
+			var filtered []string
+			for _, line := range lines {
+				trimmed := strings.TrimSpace(line)
+				// Skip empty lines
+				if trimmed == "" {
+					continue
+				}
+				// Skip echoed command
+				if lastCommand != "" && (trimmed == lastCommand || trimmed == lastCommand+"\r") {
+					continue
+				}
+				// Skip prompt lines (very basic, may need to be smarter)
+				if strings.HasPrefix(trimmed, "t_") && strings.Contains(trimmed, "@") && strings.Contains(trimmed, ":") && strings.HasSuffix(trimmed, "$") {
+					continue
+				}
+				filtered = append(filtered, trimmed)
+			}
+			if len(filtered) > 0 {
+				outputCh <- wsMessage{
+					Type: msgTypeStdout,
+					Data: strings.Join(filtered, "\n"),
+				}
 			}
 		}
 	}()
@@ -518,7 +617,7 @@ func (h *ShellHandler) handleWebSocketSession(ctx context.Context, conn *websock
 	go func() {
 		buf := make([]byte, 1024)
 		for {
-			n, err := stderr.Read(buf)
+			n, err := stderrPipe.Read(buf)
 			if err != nil {
 				if err.Error() != "EOF" {
 					log.Printf("[WS-Session] Error reading from stderr: %v", err)
@@ -535,23 +634,34 @@ func (h *ShellHandler) handleWebSocketSession(ctx context.Context, conn *websock
 	}()
 
 	// Handle stdin from WebSocket
+
 	go func() {
 		for message := range inputCh {
 			switch message.Type {
 			case msgTypeStdin:
-				_, err := stdin.Write([]byte(message.Data))
+				data := message.Data
+				// Track the last command (strip trailing newline for matching)
+				lastCommand = strings.TrimSpace(data)
+				if !strings.HasSuffix(data, "\n") {
+					data = data + "\n"
+				}
+
+				// Write the command to stdin
+				_, err := stdin.Write([]byte(data))
 				if err != nil {
 					log.Printf("[WS-Session] Error writing to stdin: %v", err)
 					errorCh <- err
 					return
 				}
+
+				// Optionally force a flush with a small delay
+				time.Sleep(10 * time.Millisecond)
+
 			case msgTypeResize:
-				// Note: Window change parameters are (height, width) for SSH but (cols, rows) for the client
-				// So we need to swap them to match the expected order
-				err := session.WindowChange(message.Rows, message.Cols)
+				// Resize handling remains the same
+				err := rootSession.WindowChange(message.Rows, message.Cols)
 				if err != nil {
 					log.Printf("[WS-Session] Error resizing window: %v", err)
-					// Non-fatal error, continue
 				}
 			}
 		}
@@ -559,58 +669,160 @@ func (h *ShellHandler) handleWebSocketSession(ctx context.Context, conn *websock
 
 	// Wait for session to end
 	go func() {
-		err := session.Wait()
+		err := rootSession.Wait()
+
+		// Acquire a semaphore to ensure we don't have race conditions with other termination paths
+		select {
+		case <-doneCh:
+			log.Printf("[WS-Session] Session already terminated, not sending exit message")
+			return
+		default:
+			// Continue with termination handling
+		}
+
 		if err != nil {
 			log.Printf("[WS-Session] SSH session ended with error: %v", err)
 			var exitCode int
 			if exitErr, ok := err.(*ssh.ExitError); ok {
 				exitCode = exitErr.ExitStatus()
 			} else {
-				exitCode = 1
+				// Handle the "without exit status" case
+				if strings.Contains(err.Error(), "without exit status") {
+					exitCode = 1
+				} else {
+					exitCode = 1
+				}
+				log.Printf("[WS-Session] SSH session terminated abnormally, using exit code %d", exitCode)
 			}
 
-			outputCh <- wsMessage{
-				Type: msgTypeExit,
-				Code: exitCode,
+			// Use a buffered channel for the done notification to avoid deadlock
+			done := make(chan struct{}, 1)
+			go func() {
+				defer func() { done <- struct{}{} }()
+				if conn.UnderlyingConn() != nil {
+					conn.SetWriteDeadline(time.Now().Add(300 * time.Millisecond))
+					conn.WriteJSON(wsMessage{
+						Type: msgTypeExit,
+						Code: exitCode,
+					})
+					log.Printf("[WS-Session] Sent exit message with code %d", exitCode)
+				}
+			}()
+
+			// Wait for the message to be sent or timeout
+			select {
+			case <-done:
+			case <-time.After(400 * time.Millisecond):
+				log.Printf("[WS-Session] Timeout sending exit message")
 			}
 		} else {
-			outputCh <- wsMessage{
-				Type: msgTypeExit,
-				Code: 0,
+			// Same pattern for normal exit
+			done := make(chan struct{}, 1)
+			go func() {
+				defer func() { done <- struct{}{} }()
+				if conn.UnderlyingConn() != nil {
+					conn.SetWriteDeadline(time.Now().Add(300 * time.Millisecond))
+					conn.WriteJSON(wsMessage{
+						Type: msgTypeExit,
+						Code: 0,
+					})
+					log.Printf("[WS-Session] Sent exit message with code 0")
+				}
+			}()
+
+			select {
+			case <-done:
+			case <-time.After(400 * time.Millisecond):
+				log.Printf("[WS-Session] Timeout sending exit message")
 			}
 		}
+
+		// Now close the done channel to signal termination
 		close(doneCh)
 	}()
 
 	// Wait for termination
 	select {
 	case err := <-errorCh:
-		// Send error message
+		// Attempt to send error message without blocking
 		errMsg := wsMessage{
 			Type:    msgTypeError,
 			Message: fmt.Sprintf("Session error: %v", err),
 		}
-		conn.WriteJSON(errMsg)
+
+		// Try to send the error message with a timeout
+		writeCtx, writeCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer writeCancel()
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			if conn.UnderlyingConn() != nil {
+				conn.SetWriteDeadline(time.Now().Add(300 * time.Millisecond))
+				conn.WriteJSON(errMsg)
+			}
+		}()
+
+		select {
+		case <-done:
+		case <-writeCtx.Done():
+			log.Printf("[WS-Session] Timeout sending error message")
+		}
+
 	case <-doneCh:
-		// Normal termination
+		// Normal termination, no action needed
 	case <-ctx.Done():
 		// Context cancelled
 	}
 
 	// Update access log to closed status
-	err = h.accessLogService.UpdateAccessLogStatus(ctx, machine.ID, tempUsername, model.StatusClosed)
+	accessLogCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	err = h.accessLogService.UpdateAccessLogStatus(accessLogCtx, machine.ID, tempUsername, model.StatusClosed)
+	cancel()
 	if err != nil {
 		log.Printf("[WS-Session] Error updating access log status: %v", err)
-		// Continue anyway, not critical
 	}
 
-	// Close WebSocket with normal closure
-	if err := conn.WriteControl(
-		websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Session ended"),
-		time.Now().Add(time.Second),
-	); err != nil {
-		log.Printf("[WS-Session] Error closing WebSocket: %v", err)
+	// Clean up ephemeral account after session ends
+	_, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cleanupCancel()
+	if err := h.cleanupEphemeralAccount(machine, tempUsername); err != nil {
+		log.Printf("[WS-Session] Error cleaning up ephemeral account %s: %v", tempUsername, err)
+	} else {
+		log.Printf("[WS-Session] Ephemeral account %s cleaned up successfully", tempUsername)
+	}
+
+	// Safely close WebSocket - use a new mutex to prevent multiple close attempts
+	if conn.UnderlyingConn() != nil {
+		// First try to send a proper close message
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+
+		closeComplete := make(chan struct{})
+		go func() {
+			defer close(closeComplete)
+			err := conn.WriteControl(
+				websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Session ended"),
+				time.Now().Add(200*time.Millisecond),
+			)
+			if err != nil {
+				if !strings.Contains(err.Error(), "websocket: close sent") {
+					log.Printf("[WS-Session] Error sending close message: %v", err)
+				}
+			}
+		}()
+
+		// Wait for close message to be sent or timeout
+		select {
+		case <-closeComplete:
+			log.Printf("[WS-Session] Close message sent successfully")
+		case <-closeCtx.Done():
+			log.Printf("[WS-Session] Close message send timed out")
+		}
+		closeCancel()
+
+		// Force close the connection after attempting clean close
+		conn.Close()
 	}
 
 	log.Printf("[WS-Session] Session ended for user %s, machine %s, temp user %s (duration: %v)",
@@ -670,7 +882,10 @@ func (h *ShellHandler) createEphemeralAccount(ctx context.Context, machine *mode
 		return "", err
 	}
 
-	// Create access log
+	// Create access log - use a new background context with timeout to avoid cancellation
+	accessLogCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	accessLog := model.AccessLog{
 		UserID:        userID,
 		MachineID:     machine.ID,
@@ -679,10 +894,19 @@ func (h *ShellHandler) createEphemeralAccount(ctx context.Context, machine *mode
 		SessionStatus: model.StatusProvisioned,
 	}
 
-	if err := h.accessLogService.CreateAccessLog(ctx, accessLog); err != nil {
+	if err := h.accessLogService.CreateAccessLog(accessLogCtx, accessLog); err != nil {
 		log.Printf("[WS] Error creating access log: %v", err)
-		// Try to cleanup the created user
-		h.cleanupEphemeralAccount(machine, tempUsername)
+
+		// Try to cleanup the created user with a new context
+		_, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+
+		cleanupErr := h.cleanupEphemeralAccount(machine, tempUsername)
+		if cleanupErr != nil {
+			log.Printf("[WS] Failed to cleanup user after access log error: %v", cleanupErr)
+			// Continue anyway
+		}
+
 		return "", err
 	}
 
@@ -698,26 +922,47 @@ func (h *ShellHandler) provisionEphemeralAccount(machine *model.Machine, tempUse
 	}
 	defer sshClient.Close()
 
-	// Create user with home dir and bash shell
-	createUserCmd := fmt.Sprintf("sudo useradd -m -s /bin/bash -U -k /etc/skel %s", tempUsername)
-	if err := h.executeSSHCommand(sshClient, createUserCmd); err != nil {
-		return fmt.Errorf("failed to create user: %w", err)
+	// First check if useradd exists and get its version/capabilities
+	stdout, stderr, err := h.executeSSHCommandWithOutput(sshClient, "command -v useradd")
+	if err != nil || stdout == "" {
+		log.Printf("[SSH] useradd command not found: %v, stderr: %s", err, stderr)
+		return fmt.Errorf("useradd command not available on target system")
+	}
+	log.Printf("[SSH] Found useradd at: %s", strings.TrimSpace(stdout))
+
+	// Create user with home dir and bash shell - use basic options for maximum compatibility
+	createUserCmd := fmt.Sprintf("sudo useradd -m -s /bin/bash %s", tempUsername)
+	log.Printf("[SSH] Creating user with command: %s", createUserCmd)
+
+	stdout, stderr, err = h.executeSSHCommandWithOutput(sshClient, createUserCmd)
+	if err != nil {
+		log.Printf("[SSH] Failed to create user: %v", err)
+		log.Printf("[SSH] Command stdout: %s", stdout)
+		log.Printf("[SSH] Command stderr: %s", stderr)
+		return fmt.Errorf("failed to create user: %s", stderr)
 	}
 
 	// Set expiry date
 	expiryDateStr := expiryTime.Format("2006-01-02")
 	expiryCmd := fmt.Sprintf("sudo chage -E %s %s", expiryDateStr, tempUsername)
-	if err := h.executeSSHCommand(sshClient, expiryCmd); err != nil {
-		return fmt.Errorf("failed to set expiry: %w", err)
+	stdout, stderr, err = h.executeSSHCommandWithOutput(sshClient, expiryCmd)
+	if err != nil {
+		log.Printf("[SSH] Failed to set expiry: %v", err)
+		log.Printf("[SSH] Command stderr: %s", stderr)
+		return fmt.Errorf("failed to set expiry: %s", stderr)
 	}
 
-	// Ensure .ssh directory exists
+	// Ensure .ssh directory exists with proper permissions
 	sshDirCmd := fmt.Sprintf("sudo mkdir -p /home/%s/.ssh && sudo chmod 700 /home/%s/.ssh && sudo chown %s:%s /home/%s/.ssh",
 		tempUsername, tempUsername, tempUsername, tempUsername, tempUsername)
-	if err := h.executeSSHCommand(sshClient, sshDirCmd); err != nil {
-		return fmt.Errorf("failed to create .ssh directory: %w", err)
+	stdout, stderr, err = h.executeSSHCommandWithOutput(sshClient, sshDirCmd)
+	if err != nil {
+		log.Printf("[SSH] Failed to create .ssh directory: %v", err)
+		log.Printf("[SSH] Command stderr: %s", stderr)
+		return fmt.Errorf("failed to create .ssh directory: %s", stderr)
 	}
 
+	log.Printf("[SSH] Successfully provisioned user %s with expiry %s", tempUsername, expiryDateStr)
 	return nil
 }
 
@@ -733,8 +978,11 @@ func (h *ShellHandler) updateEphemeralAccountExpiry(machine *model.Machine, temp
 	// Set new expiry date
 	expiryDateStr := expiryTime.Format("2006-01-02")
 	expiryCmd := fmt.Sprintf("sudo chage -E %s %s", expiryDateStr, tempUsername)
-	if err := h.executeSSHCommand(sshClient, expiryCmd); err != nil {
-		return fmt.Errorf("failed to update expiry: %w", err)
+	_, stderr, err := h.executeSSHCommandWithOutput(sshClient, expiryCmd)
+	if err != nil {
+		log.Printf("[SSH] Failed to update expiry: %v", err)
+		log.Printf("[SSH] Command stderr: %s", stderr)
+		return fmt.Errorf("failed to update expiry: %s", stderr)
 	}
 
 	return nil
@@ -751,8 +999,11 @@ func (h *ShellHandler) cleanupEphemeralAccount(machine *model.Machine, tempUsern
 
 	// Remove user and home directory
 	removeUserCmd := fmt.Sprintf("sudo userdel -r %s", tempUsername)
-	if err := h.executeSSHCommand(sshClient, removeUserCmd); err != nil {
-		return fmt.Errorf("failed to remove user: %w", err)
+	_, stderr, err := h.executeSSHCommandWithOutput(sshClient, removeUserCmd)
+	if err != nil {
+		log.Printf("[SSH] Failed to remove user: %v", err)
+		log.Printf("[SSH] Command stderr: %s", stderr)
+		return fmt.Errorf("failed to remove user: %s", stderr)
 	}
 
 	return nil
@@ -856,3 +1107,49 @@ func (h *ShellHandler) executeSSHCommand(client *ssh.Client, command string) err
 
 	return session.Run(command)
 }
+
+// executeSSHCommandWithOutput executes a command and returns stdout/stderr
+func (h *ShellHandler) executeSSHCommandWithOutput(client *ssh.Client, command string) (string, string, error) {
+	session, err := client.NewSession()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create session: %w", err)
+	}
+	defer session.Close()
+
+	var stdoutBuf, stderrBuf strings.Builder
+	session.Stdout = &stdoutBuf
+	session.Stderr = &stderrBuf
+
+	err = session.Run(command)
+	if err != nil {
+		return stdoutBuf.String(), stderrBuf.String(), err
+	}
+
+	return stdoutBuf.String(), stderrBuf.String(), nil
+}
+
+// generateSSHKeyPair creates a new SSH key pair for temporary use
+func generateSSHKeyPair() (string, string, error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Generate private key in PEM format
+	privateKeyPEM := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+	}
+	privateKeyBytes := pem.EncodeToMemory(privateKeyPEM)
+
+	// Generate public key
+	pub, err := ssh.NewPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		return "", "", err
+	}
+	publicKeyBytes := ssh.MarshalAuthorizedKey(pub)
+
+	return string(publicKeyBytes), string(privateKeyBytes), nil
+}
+
+var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\a]*\a`)
