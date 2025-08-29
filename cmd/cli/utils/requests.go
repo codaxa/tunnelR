@@ -30,7 +30,7 @@ func MakeAuthenticatedRequest(method, path string, payload interface{}) (*http.R
 	}
 
 	if !strings.HasPrefix(server, "http://") && !strings.HasPrefix(server, "https://") {
-		server = "http://" + server
+		server = "https://" + server
 	}
 
 	serverURL, err := url.Parse(server)
@@ -39,8 +39,9 @@ func MakeAuthenticatedRequest(method, path string, payload interface{}) (*http.R
 	}
 
 	// Ensure the scheme is set
-	if serverURL.Scheme == "" {
-		serverURL.Scheme = "http"
+	host := serverURL.Hostname()
+	if serverURL.Scheme == "http" && host != "localhost" && host != "127.0.0.1" && host != "::1" {
+		return nil, fmt.Errorf("refusing to send token over plain HTTP to %q; use https:// or connect to localhost", host)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -56,7 +57,11 @@ func MakeAuthenticatedRequest(method, path string, payload interface{}) (*http.R
 	}
 
 	// Construct the full URL
-	apiURL := serverURL.ResolveReference(&url.URL{Path: path})
+	p, err := url.Parse(path)
+	if err != nil {
+		return nil, fmt.Errorf("invalid request path: %w", err)
+	}
+	apiURL := serverURL.ResolveReference(p)
 
 	// Create the request
 	req, err := http.NewRequestWithContext(ctx, method, apiURL.String(), body)

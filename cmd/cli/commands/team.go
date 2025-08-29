@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -97,7 +98,7 @@ This command uses the saved authentication token from previous login.`,
 			os.Exit(1)
 		}
 
-		path := "/api/v1/teams/" + id
+		path := "/api/v1/teams/" + url.PathEscape(id)
 
 		resp, err := cliutils.MakeAuthenticatedRequest("DELETE", path, nil)
 		if err != nil {
@@ -148,7 +149,7 @@ This command uses the saved authentication token from previous login.`,
 			os.Exit(1)
 		}
 
-		path := "/api/v1/teams/" + id
+		path := "/api/v1/teams/" + url.PathEscape(id)
 
 		resp, err := cliutils.MakeAuthenticatedRequest("GET", path, nil)
 		if err != nil {
@@ -249,7 +250,7 @@ func modifyTeamUser(method, teamID, userID, successMsg string) error {
 		os.Exit(1)
 	}
 
-	path := "/api/v1/teams/" + teamID + "/users/" + userID
+	path := "/api/v1/teams/" + url.PathEscape(teamID) + "/users/" + url.PathEscape(userID)
 
 	resp, err := cliutils.MakeAuthenticatedRequest(method, path, nil)
 	if err != nil {
@@ -346,7 +347,7 @@ This command uses the saved authentication token from previous login.`,
 			os.Exit(1)
 		}
 
-		path := "/api/v1/teams/" + teamID + "/machines"
+		path := "/api/v1/teams/" + url.PathEscape(teamID) + "/machines"
 
 		resp, err := cliutils.MakeAuthenticatedRequest("GET", path, nil)
 		if err != nil {
@@ -396,7 +397,7 @@ func init() {
 		fmt.Println(err)
 	}
 
-	teamRmUserCmd.Flags().StringVarP(&userID, "user-id", "u", "", "ID of the user to add to the team")
+	teamRmUserCmd.Flags().StringVarP(&userID, "user-id", "u", "", "ID of the user to remove from the team")
 	if err := teamRmUserCmd.MarkFlagRequired("user-id"); err != nil {
 		fmt.Println(err)
 	}
