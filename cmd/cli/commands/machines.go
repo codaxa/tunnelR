@@ -9,9 +9,9 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"text/tabwriter"
 	"time"
 
+	"github.com/codaxa/tunnelR.git/cmd/cli/shared"
 	"github.com/codaxa/tunnelR.git/cmd/cli/utils"
 	"github.com/spf13/cobra"
 )
@@ -143,7 +143,7 @@ Results are formatted in a tabular layout for easy reading.
 This command requires authentication and will only show machines you have permission to view.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		// Make the request
-		resp, err := utils.MakeAuthenticatedRequest("GET", "/api/v1/machines", nil)
+		resp, err := utils.MakeAuthenticatedRequest("GET", "/api/v1/user/machines", nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -161,48 +161,12 @@ This command requires authentication and will only show machines you have permis
 		// Handle response
 		switch resp.StatusCode {
 		case http.StatusOK:
-			var machines []struct {
-				ID        string    `json:"id"`
-				Hostname  string    `json:"hostname"`
-				IP        string    `json:"ip"`
-				CreatedAt time.Time `json:"created_at"`
-			}
+			var machines []shared.Machine
 			if err := json.NewDecoder(resp.Body).Decode(&machines); err != nil {
 				fmt.Println("Error parsing response:", err)
 				os.Exit(1)
 			}
-
-			// Format output as a table
-			// Create a styled table with better spacing
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', tabwriter.TabIndent)
-
-			// Print styled header
-			fmt.Println("\n┌─────────────────────── MACHINES ───────────────────────┐")
-			if _, err := fmt.Fprintln(w, "\033[1mID\tHOSTNAME\tIP ADDRESS\tCREATED AT\033[0m"); err != nil {
-				log.Printf("Error writing to tabwriter: %v", err)
-			}
-
-			// Print separator
-			if _, err := fmt.Fprintln(w, "────────\t────────\t─────────\t───────\t──────────"); err != nil {
-				log.Printf("Error writing to tabwriter: %v", err)
-			}
-
-			// Print data rows
-			for _, m := range machines {
-				if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-					m.ID,
-					m.Hostname,
-					m.IP,
-					m.CreatedAt.Format("Jan 02, 2006 15:04")); err != nil {
-					log.Printf("Error writing to tabwriter: %v", err)
-				}
-			}
-			fmt.Println("└──────────────────────────────────────────────────────────┘")
-			if err := w.Flush(); err != nil {
-				log.Printf("Error flushing tabwriter: %v", err)
-			}
-
-			fmt.Printf("\nTotal: %d machines\n", len(machines))
+			utils.PrintMachinesTable(machines)
 		case http.StatusUnauthorized:
 			fmt.Println("Unauthorized. Please log in again.")
 			os.Exit(1)

@@ -161,7 +161,7 @@ func (r *TeamRepository) GetTeamUsers(ctx context.Context, teamID string) ([]mod
 }
 
 // GetMachinesByTeamID retrieves all machines that belong to a team
-func (r *TeamRepository) GetMachinesByTeamID(ctx context.Context, teamID string) ([]*model.Machine, error) {
+func (r *TeamRepository) GetMachinesByTeamID(ctx context.Context, teamID string) ([]model.Machine, error) {
 	query := `SELECT id, hostname, ip_address::text, created_at, updated_at FROM machines WHERE ID IN (SELECT machine_id FROM machine_teams WHERE team_id = $1)`
 
 	rows, err := r.db.Query(ctx, query, teamID)
@@ -170,13 +170,13 @@ func (r *TeamRepository) GetMachinesByTeamID(ctx context.Context, teamID string)
 	}
 	defer rows.Close()
 
-	var machines []*model.Machine
+	var machines []model.Machine
 	for rows.Next() {
 		var machine model.Machine
 		if err := rows.Scan(&machine.ID, &machine.Hostname, &machine.IPAddress, &machine.CreatedAt, &machine.UpdatedAt); err != nil {
 			return nil, err
 		}
-		machines = append(machines, &machine)
+		machines = append(machines, machine)
 	}
 
 	if err := rows.Err(); err != nil {

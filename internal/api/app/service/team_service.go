@@ -73,18 +73,7 @@ func (s *TeamService) GetTeamsByUserID(ctx context.Context, userID string) ([]*m
 }
 
 // GetMachinesByTeamID retrieves all machines that belong to a team
-func (s *TeamService) GetMachinesByTeamID(ctx context.Context, teamID string) ([]*model.Machine, error) {
-	machines, err := s.teamRepository.GetMachinesByTeamID(ctx, teamID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get machine: %w", err)
-	}
-
-	return machines, nil
-}
-
-// GetTeamByID retrieves a team by its ID, checking if the user has access
-func (s *TeamService) GetTeamByID(ctx context.Context, teamID, userID string) (*model.Team, error) {
-	// Get team first
+func (s *TeamService) GetMachinesByTeamID(ctx context.Context, teamID string) (*model.Team, error) {
 	team, err := s.teamRepository.GetTeamByID(ctx, teamID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get team: %w", err)
@@ -94,14 +83,25 @@ func (s *TeamService) GetTeamByID(ctx context.Context, teamID, userID string) (*
 		return nil, ErrTeamNotFound
 	}
 
-	// Check if user is in team
-	inTeam, err := s.teamRepository.IsUserInTeam(ctx, userID, teamID)
+	machines, err := s.teamRepository.GetMachinesByTeamID(ctx, teamID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check team membership: %w", err)
+		return nil, fmt.Errorf("failed to get machine: %w", err)
 	}
 
-	if !inTeam {
-		return nil, ErrUserNotInTeam
+	team.Machines = machines
+	return team, nil
+}
+
+// GetTeamByID retrieves a team by its ID, checking if the user has access
+func (s *TeamService) GetTeamByID(ctx context.Context, teamID string) (*model.Team, error) {
+	// Get team first
+	team, err := s.teamRepository.GetTeamByID(ctx, teamID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get team: %w", err)
+	}
+
+	if team == nil {
+		return nil, ErrTeamNotFound
 	}
 
 	teamUsers, err := s.teamRepository.GetTeamUsers(ctx, teamID)
@@ -133,6 +133,7 @@ func (s *TeamService) DeleteTeam(ctx context.Context, teamID string) error {
 
 	return nil
 }
+
 // AddUserToTeam adds a user to a team
 func (s *TeamService) AddUserToTeam(ctx context.Context, teamID, userID string) error {
 	// Check if team exists
