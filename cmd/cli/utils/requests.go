@@ -1,4 +1,4 @@
-package utils
+package cliutils
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"time"
 )
 
+// MakeAuthenticatedRequest sends requests along with payload, authorization headers
 func MakeAuthenticatedRequest(method, path string, payload interface{}) (*http.Response, error) {
 	// Load config to get server and token
 	config, err := LoadConfig()
@@ -25,7 +26,7 @@ func MakeAuthenticatedRequest(method, path string, payload interface{}) (*http.R
 
 	server := config.Server
 	if server == "" {
-		return nil, fmt.Errorf("No server configured. Please connect to server first")
+		return nil, fmt.Errorf("no server configured. Please connect to server first")
 	}
 
 	if !strings.HasPrefix(server, "http://") && !strings.HasPrefix(server, "https://") {
@@ -34,7 +35,7 @@ func MakeAuthenticatedRequest(method, path string, payload interface{}) (*http.R
 
 	serverURL, err := url.Parse(server)
 	if err != nil {
-		return nil, fmt.Errorf("Error parsing server URL: %w", err)
+		return nil, fmt.Errorf("error parsing server URL: %w", err)
 	}
 
 	// Ensure the scheme is set

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/codaxa/tunnelR.git/cmd/cli/shared"
-	"github.com/codaxa/tunnelR.git/cmd/cli/utils"
+	cliutils "github.com/codaxa/tunnelR.git/cmd/cli/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -90,7 +90,7 @@ The system supports three authentication methods:
 		}
 
 		// Make the request
-		resp, err := utils.MakeAuthenticatedRequest("POST", "/api/v1/machines", payload)
+		resp, err := cliutils.MakeAuthenticatedRequest("POST", "/api/v1/machines", payload)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -143,7 +143,7 @@ Results are formatted in a tabular layout for easy reading.
 This command requires authentication and will only show machines you have permission to view.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		// Make the request
-		resp, err := utils.MakeAuthenticatedRequest("GET", "/api/v1/user/machines", nil)
+		resp, err := cliutils.MakeAuthenticatedRequest("GET", "/api/v1/user/machines", nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -166,7 +166,7 @@ This command requires authentication and will only show machines you have permis
 				fmt.Println("Error parsing response:", err)
 				os.Exit(1)
 			}
-			utils.PrintMachinesTable(machines)
+			cliutils.PrintMachinesTable(machines)
 		case http.StatusUnauthorized:
 			fmt.Println("Unauthorized. Please log in again.")
 			os.Exit(1)
@@ -185,7 +185,7 @@ func machineRemoveFunction(_ *cobra.Command, args []string) {
 	machineID := args[0]
 
 	// Make the request
-	resp, err := utils.MakeAuthenticatedRequest("DELETE", fmt.Sprintf("/api/v1/machines/%s", url.PathEscape(machineID)), nil)
+	resp, err := cliutils.MakeAuthenticatedRequest("DELETE", fmt.Sprintf("/api/v1/machines/%s", url.PathEscape(machineID)), nil)
 	if err != nil {
 		if strings.Contains(err.Error(), "no authentication token found") {
 			fmt.Println("Please log in first using the login command")
@@ -316,7 +316,7 @@ will only be updated if explicitly specified.`,
 		}
 
 		// Make the request
-		resp, err := utils.MakeAuthenticatedRequest("PUT", "/api/v1/machines", payload)
+		resp, err := cliutils.MakeAuthenticatedRequest("PUT", "/api/v1/machines", payload)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -387,7 +387,7 @@ Team members will gain access according to team permission policies.`,
 		}
 
 		// Make the request
-		resp, err := utils.MakeAuthenticatedRequest("POST", "/api/v1/machines/teams", payload)
+		resp, err := cliutils.MakeAuthenticatedRequest("POST", "/api/v1/machines/teams", payload)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -459,7 +459,7 @@ have access through other teams or direct permissions.`,
 		}
 
 		// Make the request
-		resp, err := utils.MakeAuthenticatedRequest("DELETE", "/api/v1/machines/teams", payload)
+		resp, err := cliutils.MakeAuthenticatedRequest("DELETE", "/api/v1/machines/teams", payload)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -557,7 +557,7 @@ for a single machine record.`,
 		machineID := args[0]
 
 		// Make the request
-		resp, err := utils.MakeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/id/%s", url.PathEscape(machineID)), nil)
+		resp, err := cliutils.MakeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/id/%s", url.PathEscape(machineID)), nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -594,7 +594,7 @@ If multiple machines share the same IP (unusual), only the first match is return
 		ipAddress := args[0]
 
 		// Make the request
-		resp, err := utils.MakeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/ip/%s", url.PathEscape(ipAddress)), nil)
+		resp, err := cliutils.MakeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/ip/%s", url.PathEscape(ipAddress)), nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")

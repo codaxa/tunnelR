@@ -1,4 +1,5 @@
-package utils
+// Package cliutils contains different utilities along cli tool
+package cliutils
 
 import (
 	"encoding/json"

@@ -36,7 +36,7 @@ Examples:
 
 This command uses the saved authentication token from previous login.`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		name := args[0]
 		if name == "" {
 			fmt.Println("Error: You must provide team name")
@@ -47,7 +47,7 @@ This command uses the saved authentication token from previous login.`,
 			"name": name,
 		}
 
-		resp, err := utils.MakeAuthenticatedRequest("POST", "/api/v1/teams", payload)
+		resp, err := cliutils.MakeAuthenticatedRequest("POST", "/api/v1/teams", payload)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -90,7 +90,7 @@ Examples:
 
 This command uses the saved authentication token from previous login.`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		id := args[0]
 		if id == "" {
 			fmt.Println("Error: You must provide team id")
@@ -99,7 +99,7 @@ This command uses the saved authentication token from previous login.`,
 
 		path := "/api/v1/teams/" + id
 
-		resp, err := utils.MakeAuthenticatedRequest("DELETE", path, nil)
+		resp, err := cliutils.MakeAuthenticatedRequest("DELETE", path, nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -141,7 +141,7 @@ Examples:
 
 This command uses the saved authentication token from previous login.`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		id := args[0]
 		if id == "" {
 			fmt.Println("Error: You must provide team id")
@@ -150,7 +150,7 @@ This command uses the saved authentication token from previous login.`,
 
 		path := "/api/v1/teams/" + id
 
-		resp, err := utils.MakeAuthenticatedRequest("GET", path, nil)
+		resp, err := cliutils.MakeAuthenticatedRequest("GET", path, nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -180,7 +180,7 @@ This command uses the saved authentication token from previous login.`,
 			fmt.Printf("  ID: %s, Name: %s\n", team.ID, team.Name)
 			users := team.Users
 			fmt.Println("  Members:")
-			utils.PrintUsersTable(users)
+			cliutils.PrintUsersTable(users)
 		default:
 			body, _ := io.ReadAll(resp.Body)
 			fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
@@ -200,10 +200,10 @@ Examples:
   tunnelR team list
 
 This command uses the saved authentication token from previous login.`,
-	Run: func(cmd *cobra.Command, _ []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		path := "/api/v1/teams"
 
-		resp, err := utils.MakeAuthenticatedRequest("GET", path, nil)
+		resp, err := cliutils.MakeAuthenticatedRequest("GET", path, nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -230,13 +230,52 @@ This command uses the saved authentication token from previous login.`,
 				os.Exit(1)
 			}
 			fmt.Println("Teams:")
-			utils.PrintTeamssTable(teams)
+			cliutils.PrintTeamsTable(teams)
 		default:
 			body, _ := io.ReadAll(resp.Body)
 			fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
 			os.Exit(1)
 		}
 	},
+}
+
+func modifyTeamUser(method, teamID, userID, successMsg string) error {
+	if teamID == "" {
+		fmt.Println("Error: You must provide team id")
+		os.Exit(1)
+	}
+	if userID == "" {
+		fmt.Println("Error: You must provide user id")
+		os.Exit(1)
+	}
+
+	path := "/api/v1/teams/" + teamID + "/users/" + userID
+
+	resp, err := cliutils.MakeAuthenticatedRequest(method, path, nil)
+	if err != nil {
+		if strings.Contains(err.Error(), "no authentication token found") {
+			fmt.Println("Please log in first using the login command")
+		} else {
+			fmt.Println("Error:", err)
+		}
+		os.Exit(1)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Println("Error closing response body:", err)
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		return fmt.Errorf("❌ Error: You do not have permission")
+	case http.StatusNoContent:
+		fmt.Printf("%s\n", fmt.Sprintf(successMsg, userID, teamID))
+		return nil
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("error: Received status code %d. Response: %s", resp.StatusCode, string(body))
+	}
 }
 
 // teamCmd represents the whoami command
@@ -254,42 +293,13 @@ Examples:
 
 This command uses the saved authentication token from previous login.`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		teamID := args[0]
-		if teamID == "" {
-			fmt.Println("Error: You must provide team id")
+		if err := modifyTeamUser("POST", teamID, userID, "✅ User with ID %s added successfully to team with ID %s."); err != nil {
+			fmt.Println(err)
 			os.Exit(1)
 		}
 
-		path := "/api/v1/teams/" + teamID + "/users/" + userID
-
-		resp, err := utils.MakeAuthenticatedRequest("POST", path, nil)
-		if err != nil {
-			if strings.Contains(err.Error(), "no authentication token found") {
-				fmt.Println("Please log in first using the login command")
-			} else {
-				fmt.Println("Error:", err)
-			}
-			os.Exit(1)
-		}
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				fmt.Println("Error closing response body:", err)
-			}
-		}()
-
-		// Handle response based on the flag
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			fmt.Println("❌ Error: You do not have permission.")
-			os.Exit(1)
-		case http.StatusNoContent:
-			fmt.Printf("✅ User with ID %s added successfully to team with ID %s.\n", userID, teamID)
-		default:
-			body, _ := io.ReadAll(resp.Body)
-			fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
-			os.Exit(1)
-		}
 	},
 }
 
@@ -308,40 +318,10 @@ Examples:
 
 This command uses the saved authentication token from previous login.`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		teamID := args[0]
-		if teamID == "" {
-			fmt.Println("Error: You must provide team id")
-			os.Exit(1)
-		}
-
-		path := "/api/v1/teams/" + teamID + "/users/" + userID
-
-		resp, err := utils.MakeAuthenticatedRequest("DELETE", path, nil)
-		if err != nil {
-			if strings.Contains(err.Error(), "no authentication token found") {
-				fmt.Println("Please log in first using the login command")
-			} else {
-				fmt.Println("Error:", err)
-			}
-			os.Exit(1)
-		}
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				fmt.Println("Error closing response body:", err)
-			}
-		}()
-
-		// Handle response based on the flag
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			fmt.Println("❌ Error: You do not have permission.")
-			os.Exit(1)
-		case http.StatusNoContent:
-			fmt.Printf("🗑️ User with ID %s removed successfully from team with ID %s.\n", userID, teamID)
-		default:
-			body, _ := io.ReadAll(resp.Body)
-			fmt.Printf("Error: Received status code %d. Response: %s\n", resp.StatusCode, string(body))
+		if err := modifyTeamUser("DELETE", teamID, userID, "🗑️ User with ID %s removed successfully from team with ID %s."); err != nil {
+			fmt.Println(err)
 			os.Exit(1)
 		}
 	},
@@ -359,7 +339,7 @@ Examples:
 
 This command uses the saved authentication token from previous login.`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		teamID := args[0]
 		if teamID == "" {
 			fmt.Println("Error: You must provide team id")
@@ -368,7 +348,7 @@ This command uses the saved authentication token from previous login.`,
 
 		path := "/api/v1/teams/" + teamID + "/machines"
 
-		resp, err := utils.MakeAuthenticatedRequest("GET", path, nil)
+		resp, err := cliutils.MakeAuthenticatedRequest("GET", path, nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -398,7 +378,7 @@ This command uses the saved authentication token from previous login.`,
 			fmt.Printf("  ID: %s, Name: %s\n", team.ID, team.Name)
 			machines := team.Machines
 			fmt.Println("  Machines:")
-			utils.PrintMachinesTable(machines)
+			cliutils.PrintMachinesTable(machines)
 
 		default:
 			body, _ := io.ReadAll(resp.Body)

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/codaxa/tunnelR.git/cmd/cli/utils"
+	cliutils "github.com/codaxa/tunnelR.git/cmd/cli/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -47,7 +47,7 @@ The login command requires:
 	Run: func(_ *cobra.Command, _ []string) {
 		// If server flag is not provided, try to load from config
 		if server == "" {
-			config, err := utils.LoadConfig()
+			config, err := cliutils.LoadConfig()
 			if err != nil {
 				fmt.Printf("Error loading config: %v\n", err)
 				fmt.Println("Please provide a server address using the --server flag")
@@ -134,9 +134,9 @@ The login command requires:
 			}
 
 			// Load existing config to preserve server if it exists
-			config, err := utils.LoadConfig()
+			config, err := cliutils.LoadConfig()
 			if err != nil {
-				config = &utils.Config{} // Create new config if loading failed
+				config = &cliutils.Config{} // Create new config if loading failed
 			}
 
 			// Update token and preserve server

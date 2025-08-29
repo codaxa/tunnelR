@@ -30,7 +30,7 @@ Example:
 
 		// If server flag is not provided, try to load from config
 		if server == "" {
-			config, err := utils.LoadConfig()
+			config, err := cliutils.LoadConfig()
 			if err != nil {
 				fmt.Printf("Error loading config: %v\n", err)
 				fmt.Println("Please provide a server address using the --server flag")
@@ -88,9 +88,9 @@ func checkServerHealth(server string) bool {
 // saveServerConfig saves the server address to ~/.tunnelr/config.json
 func saveServerConfig(server string) error {
 	// Load existing config first to preserve other fields like token
-	config, err := utils.LoadConfig()
+	config, err := cliutils.LoadConfig()
 	if err != nil {
-		config = &utils.Config{}
+		config = &cliutils.Config{}
 	}
 
 	// Update the server field
