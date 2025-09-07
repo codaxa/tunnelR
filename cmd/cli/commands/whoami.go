@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	cliutils "github.com/codaxa/tunnelR.git/cmd/cli/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +32,7 @@ Example:
 This command uses the saved authentication token from previous login.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		// Load config to get token and server
-		config, err := loadConfig()
+		config, err := cliutils.LoadConfig()
 		if err != nil {
 			fmt.Println("Error loading config:", err)
 			fmt.Println("Please login first using the login command")
