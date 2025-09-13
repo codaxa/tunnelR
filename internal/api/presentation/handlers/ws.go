@@ -25,6 +25,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\a]*\a`)
+
 // ShellHandler handles WebSocket connections for shell access
 type ShellHandler struct {
 	machineService   *service.MachineService
@@ -204,7 +206,7 @@ func (h *ShellHandler) handleWebSocketSession(ctx context.Context, conn *websock
 		}
 	}()
 
-	rootSession, stdin, stdoutPipe, stderrPipe, err := h.startSSHSessionAsTempUser(sshClient, tempUsername, outputCh, doneCh)
+	rootSession, stdin, stdoutPipe, stderrPipe, err := h.startSSHSessionAsTempUser(sshClient, tempUsername, outputCh, doneCh, ttlHours)
 	if err != nil {
 		return
 	}
@@ -427,7 +429,7 @@ func (h *ShellHandler) setupEphemeralUserSession(machine *model.Machine, tempUse
 	return sshClient, tempUserConfig, randomPassword, nil
 }
 
-func (h *ShellHandler) startSSHSessionAsTempUser(sshClient *ssh.Client, tempUsername string, outputCh chan wsMessage, doneCh chan struct{}) (*ssh.Session, io.WriteCloser, io.ReadCloser, io.ReadCloser, error) {
+func (h *ShellHandler) startSSHSessionAsTempUser(sshClient *ssh.Client, tempUsername string, outputCh chan wsMessage, doneCh chan struct{}, ttlHours int) (*ssh.Session, io.WriteCloser, io.ReadCloser, io.ReadCloser, error) {
 	// Create a session from the existing root connection
 	rootSession, err := sshClient.NewSession()
 	if err != nil {
@@ -496,11 +498,12 @@ func (h *ShellHandler) startSSHSessionAsTempUser(sshClient *ssh.Client, tempUser
 
 	// After starting the shell, send a welcome command
 	time.Sleep(100 * time.Millisecond) // Small delay to let the shell initialize
-	welcomeCmd := "echo 'Shell session started. Your temporary account will expire in $(( $(date -d \"$(sudo chage -l " + tempUsername + " | grep 'Account expires' | cut -d: -f2)\" +%s) - $(date +%s) )) seconds.'\n"
-	_, err = stdin.Write([]byte(welcomeCmd))
-	if err != nil {
-		log.Printf("[WS-Session] Error sending welcome command: %v", err)
-		// Continue anyway
+	expiryTime := time.Now().Add(time.Hour * time.Duration(ttlHours))
+	expiry := time.Until(expiryTime).Round(time.Minute)
+	welcomeMsg := fmt.Sprintf("Shell session started. Your temporary account will expire in %s.", expiry)
+	outputCh <- wsMessage{
+		Type: msgTypeStdout,
+		Data: welcomeMsg,
 	}
 
 	return rootSession, stdin, io.NopCloser(stdoutPipe), io.NopCloser(stderrPipe), nil
@@ -535,9 +538,9 @@ func (h *ShellHandler) handleSessionLifecycle(
 
 	var lastCommand string
 
+	go h.handleStdin(inputCh, stdin, errorCh, rootSession, &lastCommand)
 	go h.handleStdout(stdoutPipe, outputCh, errorCh, &lastCommand)
 	go h.handleStderr(stderrPipe, outputCh, errorCh)
-	go h.handleStdin(inputCh, stdin, errorCh, rootSession, &lastCommand)
 
 	go h.waitForSessionEnd(conn, rootSession, doneCh, errorCh)
 
@@ -573,29 +576,38 @@ func (h *ShellHandler) handleStdout(stdoutPipe io.ReadCloser, outputCh chan wsMe
 			return
 		}
 		raw := string(buf[:n])
-		clean := ansiRegexp.ReplaceAllString(raw, "")
-		lines := strings.Split(clean, "\n")
-		var filtered []string
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			// Skip empty lines
-			if trimmed == "" {
-				continue
+		if raw != "" {
+			lines := strings.Split(raw, "\n")
+			var filtered []string
+			fmt.Println("rawww", raw)
+
+			for _, line := range lines {
+				cleanLine := ansiRegexp.ReplaceAllString(line, "")
+				trimmed := strings.TrimSpace(cleanLine)
+
+				if strings.HasPrefix(trimmed, "t_") && strings.HasSuffix(trimmed, "$") && strings.Contains(trimmed, "@") {
+					parts := strings.Split(trimmed, "@")
+					username := strings.Split(parts[0], "_")[1]
+					cleanLine = strings.Join([]string{username, parts[1]}, "@")
+					cleanLine += " "
+				}
+				if trimmed == "" {
+					continue
+				}
+
+				if *lastCommand != "" && trimmed == *lastCommand {
+					continue
+				}
+
+				filtered = append(filtered, cleanLine)
 			}
-			// Skip echoed command
-			if *lastCommand != "" && (trimmed == *lastCommand || trimmed == *lastCommand+"\r") {
-				continue
-			}
-			// Skip prompt lines (very basic, may need to be smarter)
-			if strings.HasPrefix(trimmed, "t_") && strings.Contains(trimmed, "@") && strings.Contains(trimmed, ":") && strings.HasSuffix(trimmed, "$") {
-				continue
-			}
-			filtered = append(filtered, trimmed)
-		}
-		if len(filtered) > 0 {
-			outputCh <- wsMessage{
-				Type: msgTypeStdout,
-				Data: strings.Join(filtered, "\n"),
+
+			if len(filtered) > 0 {
+				filteredOutput := strings.Join(filtered, "\n")
+				outputCh <- wsMessage{
+					Type: msgTypeStdout,
+					Data: filteredOutput,
+				}
 			}
 		}
 	}
@@ -625,9 +637,8 @@ func (h *ShellHandler) handleStdin(inputCh chan wsMessage, stdin io.WriteCloser,
 		switch message.Type {
 		case msgTypeStdin:
 			data := message.Data
-			*lastCommand = strings.TrimSpace(data)
-			if !strings.HasSuffix(data, "\n") {
-				data += "\n"
+			if strings.HasSuffix(data, "\n") {
+				*lastCommand = strings.TrimSpace(data)
 			}
 			_, err := stdin.Write([]byte(data))
 			if err != nil {
@@ -635,7 +646,6 @@ func (h *ShellHandler) handleStdin(inputCh chan wsMessage, stdin io.WriteCloser,
 				errorCh <- err
 				return
 			}
-			time.Sleep(10 * time.Millisecond)
 		case msgTypeResize:
 			err := rootSession.WindowChange(message.Rows, message.Cols)
 			if err != nil {
@@ -1116,8 +1126,6 @@ func generateSSHKeyPair() (string, string, error) {
 
 	return string(publicKeyBytes), string(privateKeyBytes), nil
 }
-
-var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\a]*\a`)
 
 // setupEphemeralSSH prepares SSH session, sets password, authorized_keys, and verifies user.
 func (h *ShellHandler) setupEphemeralSSH(machine *model.Machine, tempUsername string) (*ssh.Client, string, error) {
