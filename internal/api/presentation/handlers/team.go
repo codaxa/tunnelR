@@ -114,16 +114,8 @@ func (h *TeamHandler) GetTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract user ID from token
-	userID, err := authutils.ExtractUserID(r)
-	if err != nil {
-		log.Printf("Error extracting user ID: %v", err)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	// Get team
-	team, err := h.teamService.GetTeamByID(r.Context(), teamID, userID)
+	team, err := h.teamService.GetTeamByID(r.Context(), teamID)
 	if err != nil {
 		if errors.Is(err, service.ErrTeamNotFound) {
 			http.Error(w, "Team not found", http.StatusNotFound)

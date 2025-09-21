@@ -8,14 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/codaxa/tunnelR.git/cmd/cli/utils"
 	"github.com/spf13/cobra"
 )
-
-// Config represents the application configuration
-type Config struct {
-	Server string `json:"server"`
-	Token  string `json:"token,omitempty"`
-}
 
 // connectCmd represents the connect command
 var connectCmd = &cobra.Command{
@@ -35,7 +30,7 @@ Example:
 
 		// If server flag is not provided, try to load from config
 		if server == "" {
-			config, err := loadConfig()
+			config, err := cliutils.LoadConfig()
 			if err != nil {
 				fmt.Printf("Error loading config: %v\n", err)
 				fmt.Println("Please provide a server address using the --server flag")
@@ -93,9 +88,9 @@ func checkServerHealth(server string) bool {
 // saveServerConfig saves the server address to ~/.tunnelr/config.json
 func saveServerConfig(server string) error {
 	// Load existing config first to preserve other fields like token
-	config, err := loadConfig()
+	config, err := cliutils.LoadConfig()
 	if err != nil {
-		config = &Config{}
+		config = &cliutils.Config{}
 	}
 
 	// Update the server field
@@ -118,31 +113,6 @@ func saveServerConfig(server string) error {
 	}
 
 	return nil
-}
-
-// loadConfig loads the configuration from ~/.tunnelr/config.json
-func loadConfig() (*Config, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user home directory: %w", err)
-	}
-
-	configPath := filepath.Join(homeDir, ".tunnelr", "config.json")
-
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return &Config{}, nil
-		}
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-
-	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
-	}
-
-	return &config, nil
 }
 
 func init() {

@@ -10,6 +10,7 @@ type Team struct {
 	CreatedAt time.Time `json:"created_at" gorm:"default:now();autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"default:now();autoUpdateTime"`
 	Users     []User    `json:"users,omitempty" gorm:"many2many:user_teams;"`
+	Machines  []Machine `json:"machines,omitempty" gorm:"many2many:machine_teams;"`
 }
 
 // TableName returns the table name for the Team model

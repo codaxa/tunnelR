@@ -35,5 +35,5 @@ type TeamRepository interface {
 
 	GetTeamUsers(ctx context.Context, teamID string) ([]model.User, error)
 
-	GetMachinesByTeamID(ctx context.Context, teamID string) ([]*model.Machine, error)
+	GetMachinesByTeamID(ctx context.Context, teamID string) ([]model.Machine, error)
 }

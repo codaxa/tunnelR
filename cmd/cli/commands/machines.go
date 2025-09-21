@@ -1,18 +1,18 @@
 package commands
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/url" // Add URL package import
+	"net/url"
 	"os"
 	"strings"
-	"text/tabwriter"
 	"time"
 
+	"github.com/codaxa/tunnelR.git/cmd/cli/shared"
+	cliutils "github.com/codaxa/tunnelR.git/cmd/cli/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -90,7 +90,7 @@ The system supports three authentication methods:
 		}
 
 		// Make the request
-		resp, err := makeAuthenticatedRequest("POST", "/api/v1/machines", payload)
+		resp, err := cliutils.MakeAuthenticatedRequest("POST", "/api/v1/machines", payload)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -143,7 +143,8 @@ Results are formatted in a tabular layout for easy reading.
 This command requires authentication and will only show machines you have permission to view.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		// Make the request
-		resp, err := makeAuthenticatedRequest("GET", "/api/v1/user/machines", nil)
+
+		resp, err := cliutils.MakeAuthenticatedRequest("GET", "/api/v1/user/machines", nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -161,49 +162,13 @@ This command requires authentication and will only show machines you have permis
 		// Handle response
 		switch resp.StatusCode {
 		case http.StatusOK:
-			var machines []struct {
-				ID        string    `json:"id"`
-				Hostname  string    `json:"hostname"`
-				IPAddress string    `json:"ip_address"` // Changed from IP to IPAddress to match API response
-				CreatedAt time.Time `json:"created_at"`
-			}
+			var machines []shared.Machine
 			if err := json.NewDecoder(resp.Body).Decode(&machines); err != nil {
 				fmt.Println("Error parsing response:", err)
 				os.Exit(1)
 			}
 
-			// Print header
-			fmt.Println("\n┌─────────────────────────────────────────── MACHINES ───────────────────────────────────────────┐")
-
-			// Create a properly configured tabwriter with larger minwidth and explicit padding
-			w := tabwriter.NewWriter(os.Stdout, 2, 0, 3, ' ', 0)
-
-			// Print headers with consistent spacing
-			if _, err := fmt.Fprintln(w, "  ID\tHOSTNAME\tIP ADDRESS\tCREATED AT"); err != nil {
-				log.Printf("Error writing header: %v", err)
-			}
-			if _, err := fmt.Fprintln(w, "  ───────────────────────\t────────\t───────────\t──────────"); err != nil {
-				log.Printf("Error writing header underline: %v", err)
-			}
-
-			// Print data rows
-			for _, m := range machines {
-				if _, err := fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n",
-					m.ID,
-					m.Hostname,
-					m.IPAddress,
-					m.CreatedAt.Format("Jan 02, 2006 15:04")); err != nil {
-					log.Printf("Error writing machine row: %v", err)
-				}
-			}
-
-			// Flush the tabwriter
-			if err := w.Flush(); err != nil {
-				log.Printf("Error flushing tabwriter: %v", err)
-			}
-
-			fmt.Println("└────────────────────────────────────────────────────────────────────────────────────────────────┘")
-			fmt.Printf("\nTotal: %d machines\n", len(machines))
+			cliutils.PrintMachinesTable(machines)
 		case http.StatusUnauthorized:
 			fmt.Println("Unauthorized. Please log in again.")
 			os.Exit(1)
@@ -222,7 +187,7 @@ func machineRemoveFunction(_ *cobra.Command, args []string) {
 	machineID := args[0]
 
 	// Make the request
-	resp, err := makeAuthenticatedRequest("DELETE", fmt.Sprintf("/api/v1/machines/%s", url.PathEscape(machineID)), nil)
+	resp, err := cliutils.MakeAuthenticatedRequest("DELETE", fmt.Sprintf("/api/v1/machines/%s", url.PathEscape(machineID)), nil)
 	if err != nil {
 		if strings.Contains(err.Error(), "no authentication token found") {
 			fmt.Println("Please log in first using the login command")
@@ -353,7 +318,7 @@ will only be updated if explicitly specified.`,
 		}
 
 		// Make the request
-		resp, err := makeAuthenticatedRequest("PUT", "/api/v1/machines", payload)
+		resp, err := cliutils.MakeAuthenticatedRequest("PUT", "/api/v1/machines", payload)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -424,7 +389,7 @@ Team members will gain access according to team permission policies.`,
 		}
 
 		// Make the request
-		resp, err := makeAuthenticatedRequest("POST", "/api/v1/machines/teams", payload)
+		resp, err := cliutils.MakeAuthenticatedRequest("POST", "/api/v1/machines/teams", payload)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -496,7 +461,7 @@ have access through other teams or direct permissions.`,
 		}
 
 		// Make the request
-		resp, err := makeAuthenticatedRequest("DELETE", "/api/v1/machines/teams", payload)
+		resp, err := cliutils.MakeAuthenticatedRequest("DELETE", "/api/v1/machines/teams", payload)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -594,7 +559,7 @@ for a single machine record.`,
 		machineID := args[0]
 
 		// Make the request
-		resp, err := makeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/id/%s", url.PathEscape(machineID)), nil)
+		resp, err := cliutils.MakeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/id/%s", url.PathEscape(machineID)), nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -631,7 +596,7 @@ If multiple machines share the same IP (unusual), only the first match is return
 		ipAddress := args[0]
 
 		// Make the request
-		resp, err := makeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/ip/%s", url.PathEscape(ipAddress)), nil)
+		resp, err := cliutils.MakeAuthenticatedRequest("GET", fmt.Sprintf("/api/v1/machines/ip/%s", url.PathEscape(ipAddress)), nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
 				fmt.Println("Please log in first using the login command")
@@ -648,47 +613,6 @@ If multiple machines share the same IP (unusual), only the first match is return
 
 		displayMachineDetails(resp, "IP address")
 	},
-}
-
-// makeAuthenticatedRequest makes an HTTP request with authentication
-func makeAuthenticatedRequest(method, path string, payload interface{}) (*http.Response, error) {
-	// Load config to get server and token
-	config, err := loadConfig()
-	if err != nil {
-		return nil, fmt.Errorf("error loading config: %w", err)
-	}
-
-	if config.Token == "" {
-		return nil, fmt.Errorf("no authentication token found")
-	}
-
-	var body io.Reader
-	if payload != nil {
-		jsonData, err := json.Marshal(payload)
-		if err != nil {
-			return nil, fmt.Errorf("error encoding request: %w", err)
-		}
-		body = bytes.NewBuffer(jsonData)
-	}
-
-	// Construct the full URL
-	url := fmt.Sprintf("http://%s%s", config.Server, path)
-
-	// Create the request
-	req, err := http.NewRequest(method, url, body)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %w", err)
-	}
-
-	// Add headers
-	if payload != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	req.Header.Set("Authorization", "Bearer "+config.Token)
-
-	// Send the request
-	client := &http.Client{Timeout: 30 * time.Second}
-	return client.Do(req)
 }
 
 func init() {
