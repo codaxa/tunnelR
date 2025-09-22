@@ -143,6 +143,7 @@ Results are formatted in a tabular layout for easy reading.
 This command requires authentication and will only show machines you have permission to view.`,
 	Run: func(_ *cobra.Command, _ []string) {
 		// Make the request
+
 		resp, err := cliutils.MakeAuthenticatedRequest("GET", "/api/v1/user/machines", nil)
 		if err != nil {
 			if strings.Contains(err.Error(), "no authentication token found") {
@@ -166,6 +167,7 @@ This command requires authentication and will only show machines you have permis
 				fmt.Println("Error parsing response:", err)
 				os.Exit(1)
 			}
+
 			cliutils.PrintMachinesTable(machines)
 		case http.StatusUnauthorized:
 			fmt.Println("Unauthorized. Please log in again.")
@@ -281,7 +283,7 @@ will only be updated if explicitly specified.`,
 			payload["hostname"] = hostname
 		}
 		if ip != "" {
-			payload["ip"] = ip
+			payload["ip-address"] = ip
 		}
 
 		// Set auth_method based on explicit flag or infer from credentials

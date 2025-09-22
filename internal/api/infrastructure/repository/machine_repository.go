@@ -50,16 +50,30 @@ func (r *MachineRepository) UpdateMachine(ctx context.Context, machine model.Mac
 }
 
 // GetMachineByID retrieves a machine from the database by its ID
-func (r *MachineRepository) GetMachineByID(ctx context.Context, machineID string) (*model.Machine, error) {
-	query := `SELECT id, hostname, ip_address::text, auth_method, created_at, updated_at FROM machines WHERE id = $1`
-	row := r.db.QueryRow(ctx, query, machineID)
+func (r *MachineRepository) GetMachineByID(ctx context.Context, id string) (*model.Machine, error) {
+	query := `
+        SELECT id, hostname, ip_address::text, auth_method, password, key, created_at, updated_at 
+        FROM machines 
+        WHERE id = $1
+    `
 
 	var machine model.Machine
-	if err := row.Scan(&machine.ID, &machine.Hostname, &machine.IPAddress, &machine.AuthMethod, &machine.CreatedAt, &machine.UpdatedAt); err != nil {
+	err := r.db.QueryRow(ctx, query, id).Scan(
+		&machine.ID,
+		&machine.Hostname,
+		&machine.IPAddress,
+		&machine.AuthMethod,
+		&machine.Password,
+		&machine.Key,
+		&machine.CreatedAt,
+		&machine.UpdatedAt,
+	)
+
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("error fetching machine: %w", err)
 	}
 
 	return &machine, nil

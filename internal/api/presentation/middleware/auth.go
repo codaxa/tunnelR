@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"context"
+	"log"
 	"net/http"
 
 	appContext "github.com/codaxa/tunnelR.git/internal/api/app/context"
@@ -26,6 +27,8 @@ func NewAuthMiddleware(authService *service.AuthService) *AuthMiddleware {
 // Authenticate checks the request for a valid JWT token and extracts user claims
 func (am *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("AUTH: Request received at %s from %s", r.URL.Path, r.RemoteAddr)
+
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			http.Error(w, "Authorization header required", http.StatusUnauthorized)
