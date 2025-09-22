@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	cliutils "github.com/codaxa/tunnelR.git/cmd/cli/utils"
 	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +25,7 @@ var accessCmd = &cobra.Command{
 	Short: "Connect to a machine via WebSocket SSH",
 	Args:  cobra.ExactArgs(1),
 	Run: func(_ *cobra.Command, args []string) {
-		config, _ := loadConfig()
+		config, _ := cliutils.LoadConfig()
 
 		// Build WebSocket URL
 		server := config.Server

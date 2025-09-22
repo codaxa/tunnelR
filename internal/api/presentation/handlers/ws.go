@@ -579,7 +579,6 @@ func (h *ShellHandler) handleStdout(stdoutPipe io.ReadCloser, outputCh chan wsMe
 		if raw != "" {
 			lines := strings.Split(raw, "\n")
 			var filtered []string
-			fmt.Println("rawww", raw)
 
 			for _, line := range lines {
 				cleanLine := ansiRegexp.ReplaceAllString(line, "")
