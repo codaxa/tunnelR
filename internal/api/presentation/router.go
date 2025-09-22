@@ -2,14 +2,10 @@
 package apirouter
 
 import (
-	"log"
-	"net/http"
-
 	"github.com/codaxa/tunnelR.git/internal/api/app/service"
 	"github.com/codaxa/tunnelR.git/internal/api/presentation/handlers"
 	"github.com/codaxa/tunnelR.git/internal/api/presentation/middleware"
 	"github.com/go-chi/chi"
-	"github.com/gorilla/websocket"
 )
 
 // NewRouter creates a new HTTP router with the necessary routes and middleware.
@@ -31,31 +27,6 @@ func NewRouter(authService *service.AuthService, teamService *service.TeamServic
 	router.Route("/api/v1", func(r chi.Router) {
 		// Public API endpoints
 		r.Post("/login", userHandler.Login)
-
-		// Test WebSocket endpoint (no auth)
-		r.Get("/ws-test", func(w http.ResponseWriter, r *http.Request) {
-			log.Println("WS-TEST: Connection attempt started")
-
-			upgrader := websocket.Upgrader{
-				CheckOrigin: func(_ *http.Request) bool { return true },
-			}
-
-			conn, err := upgrader.Upgrade(w, r, nil)
-			if err != nil {
-				log.Printf("WS-TEST: Upgrade failed: %v", err)
-				return
-			}
-			defer func() {
-				if err := conn.Close(); err != nil {
-					log.Printf("WS-TEST: Connection close failed: %v", err)
-				}
-			}()
-
-			log.Println("WS-TEST: Connection established")
-			if err := conn.WriteMessage(websocket.TextMessage, []byte("Test WebSocket connected")); err != nil {
-				log.Printf("WS-TEST: WriteMessage failed: %v", err)
-			}
-		})
 
 		// Authenticated user routes
 		r.Group(func(r chi.Router) {
