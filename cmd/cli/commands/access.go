@@ -25,7 +25,12 @@ var accessCmd = &cobra.Command{
 	Short: "Connect to a machine via WebSocket SSH",
 	Args:  cobra.ExactArgs(1),
 	Run: func(_ *cobra.Command, args []string) {
-		config, _ := cliutils.LoadConfig()
+		config, err := cliutils.LoadConfig()
+		if err != nil {
+			fmt.Printf("Error loading config: %v\n", err)
+			fmt.Println("Please provide a server address using the --server flag")
+			return
+		}
 
 		// Build WebSocket URL
 		server := config.Server

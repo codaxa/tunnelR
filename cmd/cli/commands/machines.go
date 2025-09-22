@@ -283,7 +283,7 @@ will only be updated if explicitly specified.`,
 			payload["hostname"] = hostname
 		}
 		if ip != "" {
-			payload["ip"] = ip
+			payload["ip-address"] = ip
 		}
 
 		// Set auth_method based on explicit flag or infer from credentials

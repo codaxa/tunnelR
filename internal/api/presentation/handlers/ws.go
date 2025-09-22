@@ -708,14 +708,14 @@ func (h *ShellHandler) waitForTermination(
 	machine *model.Machine,
 	tempUsername string,
 	sessionStart time.Time,
-	_ chan wsMessage,
+	outputCh chan wsMessage,
 	errorCh chan error,
 	doneCh chan struct{},
 	userID string,
 ) {
 	select {
 	case err := <-errorCh:
-		h.sendSessionError(conn, err)
+		h.sendSessionError(outputCh, err)
 	case <-doneCh:
 	case <-ctx.Done():
 	}
@@ -723,29 +723,10 @@ func (h *ShellHandler) waitForTermination(
 	h.cleanupAndClose(conn, machine, tempUsername, sessionStart, userID)
 }
 
-func (h *ShellHandler) sendSessionError(conn *websocket.Conn, err error) {
-	errMsg := wsMessage{
+func (h *ShellHandler) sendSessionError(outputCh chan wsMessage, err error) {
+	outputCh <- wsMessage{
 		Type:    msgTypeError,
 		Message: fmt.Sprintf("Session error: %v", err),
-	}
-	writeCtx, writeCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer writeCancel()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		if conn.UnderlyingConn() != nil {
-			if err := conn.SetWriteDeadline(time.Now().Add(300 * time.Millisecond)); err != nil {
-				log.Printf("[WS-Session] Error setting write deadline: %v", err)
-			}
-			if err := conn.WriteJSON(errMsg); err != nil {
-				log.Printf("[WS-Session] Error writing JSON message: %v", err)
-			}
-		}
-	}()
-	select {
-	case <-done:
-	case <-writeCtx.Done():
-		log.Printf("[WS-Session] Timeout sending error message")
 	}
 }
 
