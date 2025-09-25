@@ -3,77 +3,82 @@ version: "3"
 dotenv: ['.env']
 
 tasks:
-  gorm-schema:
-    desc: "Generate GORM schema for Atlas"
+  deps:
+    desc: "Download dependencies"
     cmds:
-      - go run atlas-gorm.go
+      - go mod download
+      - go mod tidy
 
-  temp-db-cleanup:
-    desc: "Clean up temporary database"
-    env:
-      PGPASSWORD: "{{.DB_PASSWORD}}"
+  build-cli:
+    desc: "Build the tunnelR CLI application"
+    deps: [deps]
     cmds:
-      - |
-        psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d postgres -c "DROP DATABASE IF EXISTS \"${DB_NAME}_temp\";"
+      - mkdir -p bin
+      - go build -o bin/tunnelr-cli ./cmd/cli/main.go
 
-  migrate-clean:
-    desc: "Clean migration directory"
+  build-api:
+    desc: "Build the tunnelR API server"
+    deps: [deps]
     cmds:
-      - rm -rf migrations
-      - mkdir -p migrations
+      - mkdir -p bin
+      - go build -o bin/tunnelr-api ./cmd/api/main.go
 
-  migrate-init:
-    desc: "Initialize migration files"
-    cmds:
-      - task: gorm-schema
-      - |
-        atlas migrate diff initial_schema --env development 
+  build:
+    desc: "Build both CLI and API applications"
+    deps: [build-cli, build-api]
 
-  migrate-hash:
-    desc: "Re-hash migration files"
+  run-cli:
+    desc: "Run the tunnelR CLI application"
     cmds:
-      - atlas migrate hash --env development
+      - go run ./cmd/cli/main.go
 
-  migrate-up:
-    desc: "Apply migrations to development DB"
+  run-api:
+    desc: "Run the tunnelR API server"
     cmds:
-      - atlas migrate apply --env development
+      - go run ./cmd/api/main.go
 
-  migrate-down:
-    desc: "Rollback last migration"
+  test:
+    desc: "Run all tests"
     cmds:
-      - atlas migrate rollback --env development
+      - go test ./...
 
-  migrate-status:
-    desc: "Check migration status"
+  lint:
+    desc: "Run linter"
     cmds:
-      - atlas migrate status --env development
+      - golangci-lint run --fix
 
-  migrate-new:
-    desc: "Generate migration from GORM models"
+  vet:
+    desc: "Run go vet"
     cmds:
-      - task: gorm-schema
-      - atlas migrate diff add_changes --env development 
+      - go vet ./...
 
-  setup:
-    desc: "Setup development environment"
+  format:
+    desc: "Format code"
     cmds:
-      - task: deps
-      - task: db-create
-      - task: migrate-init
-      - task: migrate-up
+      - go fmt ./...
 
-  setup-fresh:
-    desc: "Fresh setup with clean database"
+  check:
+    desc: "Run all checks (format, lint, vet, test)"
     cmds:
-      - task: deps
-      - task: db-drop
-      - task: temp-db-cleanup
-      - task: db-create
-      - task: migrate-clean
-      - task: migrate-init
-      - task: migrate-new
-      - task: migrate-up
+      - task: test
+      - task: lint
+      - task: vet
+      - task: format
+
+  clean:
+    desc: "Clean build artifacts"
+    cmds:
+      - rm -rf bin/
+
+  encrypt:
+    desc: "Encrypt .env files"
+    cmds:
+      - bash ./scripts/encrypt.sh
+
+  decrypt:
+    desc: "Decrypt .env files"
+    cmds:
+      - bash ./scripts/decrypt.sh
 
   db-create:
     desc: "Create database"
@@ -116,88 +121,84 @@ tasks:
           echo "Database '${DB_NAME}' does not exist"
         fi
 
-  test:
-    desc: "Run all tests"
+  temp-db-cleanup:
+    desc: "Clean up temporary database"
+    env:
+      PGPASSWORD: "{{.DB_PASSWORD}}"
     cmds:
-      - go test ./...
+      - |
+        psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d postgres -c "DROP DATABASE IF EXISTS \"${DB_NAME}_temp\";"
 
-  test-verbose:
-    desc: "Run tests with verbose output"
+  gorm-schema:
+    desc: "Generate GORM schema for Atlas"
     cmds:
-      - go test -v ./...
+      - go run atlas-gorm.go
 
-  test-coverage:
-    desc: "Run tests with coverage"
+  migrate-clean:
+    desc: "Clean migration directory"
     cmds:
-      - go test -cover ./...
+      - rm -rf internal/api/infrastructure/db/migrations
+      - mkdir -p internal/api/infrastructure/db/migrations
 
-  build:
-    desc: "Build the application"
+  migrate-init:
+    desc: "Initialize migration files"
     cmds:
-      - go build -o bin/z-chat ./cmd/chatserver
+      - task: gorm-schema
+      - |
+        atlas migrate diff initial_schema --env development 
 
-  run:
-    desc: "Run the application"
+  migrate-hash:
+    desc: "Re-hash migration files"
     cmds:
-      - go run ./cmd/chatserver
+      - atlas migrate hash --env development
 
-  clean:
-    desc: "Clean build artifacts"
+  migrate-up:
+    desc: "Apply migrations to development DB"
     cmds:
-      - rm -rf bin/
+      - atlas migrate apply --env development
 
-  deps:
-    desc: "Download dependencies"
+  migrate-down:
+    desc: "Rollback last migration"
     cmds:
-      - go mod download
-      - go mod tidy
+      - atlas migrate down --env development
 
-  lint:
-    desc: "Run linter"
+  migrate-status:
+    desc: "Check migration status"
     cmds:
-      - golangci-lint run
+      - atlas migrate status --env development
 
-  format:
-    desc: "Format code"
+  migrate-new:
+    desc: "Generate migration from GORM models"
     cmds:
-      - go fmt ./...
+      - task: gorm-schema
+      - atlas migrate diff add_changes --env development 
 
-  dev:
-    desc: "Run in development mode with auto-reload"
-    deps: [build]
+  setup:
+    desc: "Setup development environment"
     cmds:
-      - ./bin/z-chat
-
-  dev-reset:
-    desc: "Reset development database"
-    cmds:
-      - task: db-drop
+      - task: deps
       - task: db-create
+      - task: migrate-init
       - task: migrate-up
 
-  check:
-    desc: "Run all checks (lint, test, format)"
+  setup-fresh:
+    desc: "Fresh setup with clean database"
     cmds:
-      - task: format
-      - task: lint
-      - task: test
+      - task: deps
+      - task: db-drop
+      - task: temp-db-cleanup
+      - task: db-create
+      - task: migrate-clean
+      - task: migrate-init
+      - task: migrate-new
+      - task: migrate-up
 
-  encrypt:
-    desc: "Encrypt .env files"
-    cmds:
-      - bash ./scripts/encrypt.sh
-
-  decrypt:
-    desc: "Decrypt .env files"
-    cmds:
-      - bash ./scripts/decrypt.sh
-  
-  default:
-    desc: "Show available tasks"
-    cmds:
-      - task --list
-  
   dev-air:
     desc: "Start development server with file watching"
     cmds:
       - air
+
+  default:
+    desc: "Show available tasks"
+    cmds:
+      - task --list
